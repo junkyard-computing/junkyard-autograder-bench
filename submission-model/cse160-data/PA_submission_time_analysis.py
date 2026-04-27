@@ -1,11 +1,17 @@
+import sys
+from pathlib import Path
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.mixture import GaussianMixture
+import warnings
+
+warnings.filterwarnings("ignore", message="KMeans is known")
+sys.stdout.reconfigure(encoding="utf-8")
 
 # Config
-CSV_PATH = "pa7_out_filtered.csv"
-MAX_COMPONENTS = 10
+pa_num = input("Enter PA number: ").strip()
+CSV_PATH = Path(__file__).parent / "filtered-data" / f"pa{pa_num}_out_filtered.csv"
 RANDOM_STATE = 42
 
 # Load & compute hours
@@ -14,6 +20,8 @@ df["submission_time"] = pd.to_datetime(df["submission_time"], utc=True)
 
 t0 = df["submission_time"].min()
 df["hours"] = (df["submission_time"] - t0).dt.total_seconds() / 3600
+
+MAX_COMPONENTS = max(1, int(df["hours"].max() / 24))
 
 print(f"First submission : {t0}")
 print(f"Last submission  : {df['submission_time'].max()}")
@@ -54,8 +62,8 @@ for rank, (w, mu, sigma) in enumerate(zip(weights, means, stds)):
     print(f"  C{rank+1:<9} {w:>8.3f} {mu:>14.1f} {mu/24:>14.1f} {sigma:>10.1f}")
 
 # plotting
-fig, ax = plt.subplots(figsize=(10, 5))
-fig.suptitle("Submission Timing for PA7", fontsize=13, fontweight="bold")
+fig, ax = plt.subplots(figsize=(8, 5))
+fig.suptitle(f"Submission Timing for PA{pa_num}", fontsize=13, fontweight="bold")
 
 x = np.linspace(hours.min() - 5, hours.max() + 5, 1000).reshape(-1, 1)
 mixture_pdf = np.exp(gmm.score_samples(x))
@@ -70,7 +78,7 @@ for rank, (w, mu, sigma) in enumerate(zip(weights, means, stds)):
         w / (sigma * np.sqrt(2 * np.pi))
         * np.exp(-0.5 * ((x.flatten() - mu) / sigma) ** 2)
     )
-    ax.plot(x, comp_pdf, "--", color=colors[rank], linewidth=1.4,
+    ax.plot(x, comp_pdf, "--", color=colors[rank % len(colors)], linewidth=1.4,
             label=f"C{rank+1}  {mu:.0f}h / day {mu/24:.1f}  (w={w:.2f})")
 
 # day markers
@@ -85,6 +93,19 @@ ax.set_ylabel("Density")
 ax.legend(fontsize=8, loc="upper right")
 ax.grid(True, alpha=0.3)
 
+# Equation output
+eq_lines = ["f(hours) ="]
+for w, mu, sigma in zip(weights, means, stds):
+    eq_lines.append(f"  + {w:.3f} · N(μ={mu:.2f}h, σ={sigma:.2f}h)")
+eq_str = "\n".join(eq_lines)
+print("\nMixture equation:")
+print(eq_str)
+
+ax.text(0.02, 0.95, eq_str, transform=ax.transAxes, fontsize=7,
+        verticalalignment="top", horizontalalignment="left", fontfamily="monospace",
+        bbox=dict(boxstyle="round", facecolor="white", alpha=0.7))
+
 plt.tight_layout()
-plt.savefig("gmm_hours_PA7.png", dpi=150, bbox_inches="tight")
-print("\nPlot saved to gmm_hours_PA7.png")
+plot_path = f"gmm-figures/gmm_hours_PA{pa_num}.png"
+plt.savefig(plot_path, dpi=150, bbox_inches="tight")
+print(f"\nPlot saved to {plot_path}")

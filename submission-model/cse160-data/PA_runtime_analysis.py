@@ -1,3 +1,5 @@
+import sys
+from pathlib import Path
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -5,9 +7,13 @@ from sklearn.mixture import GaussianMixture
 from sklearn.model_selection import cross_val_score
 import warnings
 
+warnings.filterwarnings("ignore", message="KMeans is known")
+sys.stdout.reconfigure(encoding="utf-8")
+
 # Config
-CSV_PATH = "./pa8_out_1984.csv"
-MAX_COMPONENTS = 10  # upper bound for BIC search
+pa_num = input("Enter PA number (3,4,5,7,8): ").strip()
+CSV_PATH = Path(__file__).parent / "filtered-data" / f"pa{pa_num}_out_filtered.csv"
+MAX_COMPONENTS = None  # set dynamically from submission date range
 TIMEOUT_MS = 837290  # max observed; treat -1 rows as censored here
 RANDOM_STATE = 42
 
@@ -20,6 +26,9 @@ df = pd.read_csv(CSV_PATH)
 
 df_timeout = df[df["runtime_ms"] == -1].copy()
 df_valid = df[df["runtime_ms"] > 0].copy()
+
+times = pd.to_datetime(df["submission_time"], utc=True)
+MAX_COMPONENTS = max(1, (times.max() - times.min()).days)
 
 print(f"Total submissions   : {len(df)}")
 print(f"Pre-exec failures   : {df['runtime_ms'].isna().sum()}  (excluded)")
@@ -79,7 +88,7 @@ print(f"\n  Timeouts       {timeout_frac:>8.3f}  (>{TIMEOUT_MS:,} ms, censored)"
 
 # plotting
 fig, ax = plt.subplots(figsize=(8, 5))
-fig.suptitle("Submission Runtime for PA8", fontsize=14, fontweight="bold")
+fig.suptitle(f"Submission Runtime for PA{pa_num}", fontsize=14, fontweight="bold")
 
 log_range = np.linspace(log_rt.min() - 0.5, log_rt.max() + 0.5, 500).reshape(-1, 1)
 log_pdf = np.exp(best_gmm.score_samples(log_range))
@@ -95,7 +104,7 @@ for rank, i in enumerate(order):
         / (stds[i] * np.sqrt(2 * np.pi))
         * np.exp(-0.5 * ((log_range.flatten() - means[i]) / stds[i]) ** 2)
     )
-    ax.plot(log_range, comp_pdf, "--", color=colors[rank],
+    ax.plot(log_range, comp_pdf, "--", color=colors[rank % len(colors)],
             linewidth=1.4, label=f"C{rank+1} (w={weights[i]:.2f})")
 
 # mark timeout threshold
@@ -104,18 +113,25 @@ ax.axvline(np.log(TIMEOUT_MS), color="crimson", linewidth=1.2,
 
 ax.set_xlabel("log(runtime_ms)")
 ax.set_ylabel("Density")
-ax.set_title(f"Log-space density  (k={best_k})")
+# ax.set_title(f"Log-space density  (k={best_k})")
 ax.legend(fontsize=8)
 ax.grid(True, alpha=0.3)
 
-plt.tight_layout()
-plt.savefig("gmm_runtime.png", dpi=150, bbox_inches="tight")
-print("\nPlot saved to gmm_runtime.png")
+# Equation output
+eq_lines = ["f(log_ms) ="]
+for rank, i in enumerate(order):
+    eq_lines.append(f"  + {weights[i]:.3f} · N(μ={means[i]:.3f}, σ={stds[i]:.3f})")
+eq_str = "\n".join(eq_lines)
+print("\nMixture equation:")
+print(eq_str)
 
+ax.text(0.02, 0.95, eq_str, transform=ax.transAxes, fontsize=7,
+        verticalalignment="top", fontfamily="monospace",
+        bbox=dict(boxstyle="round", facecolor="white", alpha=0.7))
 
 # BIC curve
 # ax2 = axes[1]
-# ks = list(range(1, MAX_COMPONENTS + 1))
+# ks = list(range(1, len(bic_scores) + 1))
 # ax2.plot(ks, bic_scores, marker="o", color="#1f3a5f", linewidth=2)
 # ax2.axvline(best_k, color="crimson", linestyle="--", linewidth=1.2,
 #             label=f"Best k={best_k}")
@@ -125,9 +141,10 @@ print("\nPlot saved to gmm_runtime.png")
 # ax2.legend()
 # ax2.grid(True, alpha=0.3)
 
-# plt.tight_layout()
-# plt.savefig("gmm_runtime.png", dpi=150, bbox_inches="tight")
-# print("\nPlot saved to gmm_runtime.png")
+plt.tight_layout()
+plot_path = f"gmm-figures/gmm_runtime_PA{pa_num}.png"
+plt.savefig(plot_path, dpi=150, bbox_inches="tight")
+print(f"\nPlot saved to {plot_path}")
 
 # Load characterization
 print("\nLoad characterization:")
