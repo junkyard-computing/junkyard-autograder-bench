@@ -129,7 +129,7 @@ int main(int argc, char *argv[]) {
 
     printf("Calls: %ld\n", calls);
     printf("Elapsed: %.3f us\n", elapsed);
-    printf("FLOPs: %.3e\n", total_flops);
+    printf("Total FLOPs: %.3e\n", total_flops);
     printf("Performance: %.2f GFLOPS (FP32)\n", gflops);
 
     // Release OpenCL resources
