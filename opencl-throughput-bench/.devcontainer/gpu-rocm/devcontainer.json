@@ -1,0 +1,17 @@
+{
+	"image": "cse160-opencl:rocm",
+	"runArgs": [
+		"--cap-add=SYS_PTRACE",
+		"--ipc=host",
+		"--privileged=true",
+		"--device=/dev/kfd",
+		"--device=/dev/dri"
+		],
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"ms-vscode.cpptools-extension-pack"
+			]
+		}
+	}
+}
