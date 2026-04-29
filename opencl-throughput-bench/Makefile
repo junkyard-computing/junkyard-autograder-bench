@@ -1,7 +1,7 @@
 CC       = gcc
 CFLAGS   = -g -Wall
-INCFLAGS := -I../helper_lib
-LDFLAGS  := ../helper_lib/helper_lib.a -lm
+INCFLAGS := -I helper_lib
+LDFLAGS  := helper_lib/helper_lib.a -lm
 MAKECMD  = make
 
 ifeq ($(shell uname -o), Darwin)
@@ -19,14 +19,14 @@ debug: CFLAGS += -DOCL_DEVICE_TYPE=CL_DEVICE_TYPE_CPU
 debug: MAKECMD += debug
 debug: solution
 
-solution: ../helper_lib/helper_lib.a main.c
+solution: helper_lib/helper_lib.a main.c
 	$(CC) $(CFLAGS) -o $@ $^ $(INCFLAGS) $(LDFLAGS)
 
-../helper_lib/helper_lib.a: 
-	cd ../helper_lib; $(MAKECMD)
+helper_lib/helper_lib.a: 
+	cd helper_lib; $(MAKECMD)
 
 run: solution
-	./solution 10.0
+	./solution 5000000
 
 clean: 
-	cd ./helper_lib; make clean
+	cd helper_lib; make clean
