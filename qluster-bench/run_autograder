@@ -1,0 +1,43 @@
+#!/bin/bash
+set -e
+
+# Define directories based on your requested structure
+SOURCE_DIR="/autograder/source"
+SUBMISSION_DIR="/autograder/submission"
+ZIP_FILE="/submission/archive.zip" # Go server mounts zip file here
+
+echo "Starting autograder from $SOURCE_DIR..."
+
+cd "$SUBMISSION_DIR"
+if ! unzip -q "$ZIP_FILE" -d .; then
+    echo "---JSON_START---"
+    echo '{"score": 0, "output": "Failed to unzip submission."}'
+    echo "---JSON_END---"
+    exit 1
+fi
+
+set +e
+echo "Executing benchmark inside $(pwd)..."
+EXECUTION_OUTPUT=$(./benchmark.sh 2>&1)
+EXIT_CODE=$?
+set -e
+
+ESCAPED_OUTPUT=$(echo "$EXECUTION_OUTPUT" | jq -Rsa .)
+
+echo "---JSON_START---"
+if [ $EXIT_CODE -eq 0 ]; then
+    cat <<EOF
+{
+    "score": 100,
+    "output": $ESCAPED_OUTPUT
+}
+EOF
+else
+    cat <<EOF
+{
+    "score": 0,
+    "output": "Execution failed.\nLogs:\n$ESCAPED_OUTPUT"
+}
+EOF
+fi
+echo "---JSON_END---"
