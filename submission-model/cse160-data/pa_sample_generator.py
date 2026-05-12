@@ -17,7 +17,7 @@ pa_runtime = input("Enter PA number for runtimes (1-8): ").strip()
 n_samples = int(input("Number of samples to generate: ").strip())
 
 FILTERED = Path(__file__).parent / "filtered-data"
-OUT_PATH = Path(__file__).parent / f"pa{pa_hours}_hours_pa{pa_runtime}_runtime_synthetic.csv"
+OUT_PATH = Path(__file__).parent / f"pa{pa_hours}_hours_pa{pa_runtime}_runtime_n{n_samples}_synthetic.csv"
 
 df_hours = pd.read_csv(FILTERED / f"pa{pa_hours}_out_filtered.csv")
 df_hours["submission_time"] = pd.to_datetime(df_hours["submission_time"], utc=True)
@@ -72,19 +72,8 @@ active_pool = df["active"].values
 sampled_hours = timing_gmm.sample(n_samples)[0].flatten()
 sampled_hours = np.clip(sampled_hours, 0, None)
 
-# sample all valid runtimes at once to avoid GMM random_state reset bug
 log_vals = runtime_gmm.sample(n_samples)[0].flatten()
-valid_iter = iter(np.exp(log_vals).round(2))
-
-rolls = rng.random(n_samples)
-runtime_samples = []
-for roll in rolls:
-    if roll < preexec_frac:
-        runtime_samples.append(None)
-    elif roll < preexec_frac + timeout_frac:
-        runtime_samples.append(-1)
-    else:
-        runtime_samples.append(float(next(valid_iter)))
+runtime_samples = np.round(np.exp(log_vals), 2).tolist()
 
 sampled_scores = rng.choice(score_pool, size=n_samples)
 sampled_active = rng.choice(active_pool, size=n_samples)
