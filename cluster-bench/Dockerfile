@@ -1,9 +1,12 @@
-FROM ghcr.io/kastnerrg/cse160-opencl:gpu-adreno
+FROM pixelfold-docker:latest
 USER root
 
 RUN apt-get update && \
-    apt-get install -y gcc make unzip jq && \
+    apt-get install -y sudo opencl-headers gcc make unzip jq && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd render
+RUN usermod -a -G render,video ubuntu
 
 RUN mkdir -p /autograder/submission /autograder/source
 
