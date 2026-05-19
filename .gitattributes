@@ -1,7 +1,7 @@
 # Include in language stats
-*.tex linguist-detectable
 
 # Ignores in lanuage stats
 *.css linguist-documentation
 *.html linguist-documentation
 *.htm linguist-documentation
+*.tex linguist-documentation
