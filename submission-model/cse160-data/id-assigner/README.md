@@ -8,5 +8,5 @@ to each other. This is specific to this project since the Gradescope scraper is 
 ## Usage
 
 ```bash
-run --package id-assigner --bin id-assigner -- <input.csv> <output.csv>
+cargo run --package id-assigner --bin id-assigner -- <input.csv> <output.csv>
 ```
