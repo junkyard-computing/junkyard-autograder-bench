@@ -63,6 +63,8 @@ spec:
               value: "docker.io/library/modified-pixelfold-docker:latest"
             - name: GPU_DEVICE_PATH
               value: "/dev/mali0"
+            - name: REGISTRY_SECRET_NAME
+              value: ""
             # - name: TARGET_WORKER_NODE
             # value: "pf-026"
           ports:
@@ -74,6 +76,8 @@ spec:
       nodeSelector:
           kubernetes.io/arch: arm64
           kubernetes.io/hostname: "pf-022"
+      imagePullSecrets:
+        - name: my-registry-secret
       volumes:
         - name: kubeconfig-storage
           hostPath:
