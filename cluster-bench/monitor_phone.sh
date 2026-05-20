@@ -6,8 +6,7 @@ watch -n 1 '
   1000 )) MHz"
   echo ""
   echo "CPU (8 cores: 1x X1 BIG, 3x A76 MID, 4x A55 LITTLE)"
-  echo "  load 1m     : avg runnable threads    $(awk "{print \$1}" /proc/loadavg)  (8.0 = all
-  cores full)"
+  echo "  load 1m     : avg runnable threads    $(awk "{print \$1}" /proc/loadavg)  (8.0 = all cores full)"
   echo "  load 5m     :                         $(awk "{print \$2}" /proc/loadavg)"
   echo "  load 15m    :                         $(awk "{print \$3}" /proc/loadavg)"
   echo "  threads     : running / total         $(awk "{print \$4}" /proc/loadavg)"
