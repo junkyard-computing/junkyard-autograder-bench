@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::path::PathBuf;
 
-/// Convert submission events into inferred student usage sessions.
+/// Convert submission into inferred student interactive session usage.
 ///
 /// Based on paper: Karsai, M., & Jo, H.-H. (2024). Measuring and Modeling Bursty Human Phenomena.
 /// arXiv. https://doi.org/10.48550/arXiv.2412.13617
@@ -54,7 +54,9 @@ struct SessionRow {
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 
-    let mut rdr = ReaderBuilder::new().trim(csv::Trim::All).from_path(&args.input)?;
+    let mut rdr = ReaderBuilder::new()
+        .trim(csv::Trim::All)
+        .from_path(&args.input)?;
 
     // Group submissions by student.
     let mut by_student: BTreeMap<String, Vec<DateTime<FixedOffset>>> = BTreeMap::new();
@@ -74,21 +76,29 @@ fn main() -> Result<(), Box<dyn Error>> {
         if times.is_empty() {
             continue;
         }
-
         times.sort();
-
         let mut burst_start_idx = 0usize;
-
         for i in 1..times.len() {
             let gap = times[i] - times[i - 1];
             if gap > burst_threshold {
-                sessions.push(make_session(&student_id, &times, burst_start_idx, i - 1, pre)?);
+                sessions.push(make_session(
+                    &student_id,
+                    &times,
+                    burst_start_idx,
+                    i - 1,
+                    pre,
+                )?);
                 burst_start_idx = i;
             }
         }
 
-        sessions.push(make_session( &student_id, &times, burst_start_idx,
-            times.len() - 1, pre, )?);
+        sessions.push(make_session(
+            &student_id,
+            &times,
+            burst_start_idx,
+            times.len() - 1,
+            pre,
+        )?);
     }
 
     // Sort by timestamp

@@ -1,6 +1,7 @@
 [package]
 name = "interactive-dev-sessions"
 version = "0.1.0"
+authors = ["Tom Zhang <treez.zhang@gmail.com>"]
 edition = "2024"
 
 [dependencies]
