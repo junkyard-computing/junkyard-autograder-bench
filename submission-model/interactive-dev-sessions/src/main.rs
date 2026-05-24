@@ -2,6 +2,7 @@ use chrono::{DateTime, Duration, FixedOffset};
 use clap::Parser;
 use csv::{ReaderBuilder, WriterBuilder};
 use rand::Rng;
+use rand_distr::{Distribution, Normal};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -45,23 +46,16 @@ struct SubmissionRow {
     score: Option<f64>,
 }
 
-fn gaussian_gen(mean: i64, variance: i64) -> i64 {
-    assert!(variance > 0);
+fn gaussian_gen<R: Rng + ?Sized>(rng: &mut R, mean: i64, variance: f64) -> i64 {
+    assert!(variance >= 0.0, "Variance is negative");
 
-    let mut rng = rand::thread_rng();
+    if variance == 0.0 {
+        return mean;
+    }
 
-    // Uniform random values in (0, 1)
-    let u1: f64 = rng.gen_range(f64::EPSILON..1.0);
-    let u2: f64 = rng.gen_range(0.0..1.0);
-
-    // Standard normal using Box-Muller
-    let z0 = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
-
-    let std_dev = (variance as f64).sqrt();
-
-    // Scale and shift
-    let value = mean as f64 + z0 * std_dev;
-
+    let std_dev = variance.sqrt();
+    let normal = Normal::new(mean as f64, std_dev).unwrap();
+    let value = normal.sample(rng);
     value.round() as i64
 }
 
@@ -88,7 +82,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         by_student.entry(row.student_id).or_default().push(ts);
     }
 
-    let pre = Duration::hours(gaussian_gen(args.pre_hours, 2));
+    let pre = args.pre_hours;
     let burst_threshold = Duration::hours(args.burst_hours);
 
     let mut sessions: Vec<SessionRow> = Vec::new();
@@ -149,11 +143,12 @@ fn make_session(
     times: &[DateTime<FixedOffset>],
     start_idx: usize,
     end_idx: usize,
-    pre: Duration,
+    pre: i64,
 ) -> Result<SessionRow, Box<dyn Error>> {
+    let mut rng = rand::thread_rng();
     let first = times[start_idx];
     let last = times[end_idx];
-    let timestamp = first - pre;
+    let timestamp = first - Duration::hours(gaussian_gen(&mut rng, pre, 1.0));
 
     // Session length is from the inferred start time to the last submission in the burst.
     let length = last - timestamp;
