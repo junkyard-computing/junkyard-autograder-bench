@@ -1,6 +1,7 @@
 use chrono::{DateTime, Duration, FixedOffset};
 use clap::Parser;
 use csv::{ReaderBuilder, WriterBuilder};
+use rand::Rng;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -44,6 +45,26 @@ struct SubmissionRow {
     score: Option<f64>,
 }
 
+fn gaussian_gen(mean: i64, variance: i64) -> i64 {
+    assert!(variance > 0);
+
+    let mut rng = rand::thread_rng();
+
+    // Uniform random values in (0, 1)
+    let u1: f64 = rng.gen_range(f64::EPSILON..1.0);
+    let u2: f64 = rng.gen_range(0.0..1.0);
+
+    // Standard normal using Box-Muller
+    let z0 = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
+
+    let std_dev = (variance as f64).sqrt();
+
+    // Scale and shift
+    let value = mean as f64 + z0 * std_dev;
+
+    value.round() as i64
+}
+
 #[derive(Debug, Clone)]
 struct SessionRow {
     student_id: String,
@@ -67,7 +88,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         by_student.entry(row.student_id).or_default().push(ts);
     }
 
-    let pre = Duration::hours(args.pre_hours);
+    let pre = Duration::hours(gaussian_gen(args.pre_hours, 2));
     let burst_threshold = Duration::hours(args.burst_hours);
 
     let mut sessions: Vec<SessionRow> = Vec::new();
