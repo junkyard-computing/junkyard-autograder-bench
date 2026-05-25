@@ -14,6 +14,7 @@ use std::path::PathBuf;
 /// arXiv. https://doi.org/10.48550/arXiv.2412.13617
 
 static PRE_VARIANCE: f64 = 1.0;
+static POST_VARIANCE: f64 = 0.1;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
@@ -35,7 +36,7 @@ struct Args {
 
     /// If the gap between two consecutive submissions exceeds this many hours,
     /// start a new burst.
-    #[arg(long, default_value_t = 3)]
+    #[arg(long, default_value_t = 6)]
     burst_hours: i64,
 }
 
@@ -157,10 +158,13 @@ fn make_session(
     let last = times[end_idx];
 
     let pre_seconds = gaussian_gen(&mut rng, pre, PRE_VARIANCE) * 3600.0;
-    let timestamp = first - Duration::seconds(pre_seconds as i64);
+    let timestamp = first - Duration::seconds(pre_seconds as i64); // start time
+
+    let post_seconds = (gaussian_gen(&mut rng, 0, POST_VARIANCE) * 3600.0).max(0.0);
+    let posttime = Duration::seconds(post_seconds as i64);
 
     // Session length is from start time to the last submission in the burst.
-    let length = last - timestamp;
+    let length = last - timestamp + posttime;
     let length_seconds = length
         .to_std()
         .map(|d| d.as_secs_f64())
