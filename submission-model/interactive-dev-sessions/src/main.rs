@@ -13,6 +13,8 @@ use std::path::PathBuf;
 /// Based on paper: Karsai, M., & Jo, H.-H. (2024). Measuring and Modeling Bursty Human Phenomena.
 /// arXiv. https://doi.org/10.48550/arXiv.2412.13617
 
+static PRE_VARIANCE: f64 = 1.0;
+
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
 struct Args {
@@ -28,7 +30,7 @@ struct Args {
 
     /// Hours before the first submission to place the session start
     /// This is what we assume to be the average minimum time students will spend on assignment
-    #[arg(long, default_value_t = 2)]
+    #[arg(long, default_value_t = 3)]
     pre_hours: i64,
 
     /// If the gap between two consecutive submissions exceeds this many hours,
@@ -46,17 +48,22 @@ struct SubmissionRow {
     score: Option<f64>,
 }
 
-fn gaussian_gen<R: Rng + ?Sized>(rng: &mut R, mean: i64, variance: f64) -> i64 {
+fn gaussian_gen<R: Rng + ?Sized>(rng: &mut R, mean: i64, variance: f64) -> f64 {
     assert!(variance >= 0.0, "Variance is negative");
 
     if variance == 0.0 {
-        return mean;
+        return mean as f64;
     }
 
     let std_dev = variance.sqrt();
     let normal = Normal::new(mean as f64, std_dev).unwrap();
-    let value = normal.sample(rng);
-    value.round() as i64
+    let mut value = normal.sample(rng);
+
+    if value < 0.0 {
+        value = 0.0;
+    }
+
+    value
 }
 
 #[derive(Debug, Clone)]
@@ -148,9 +155,11 @@ fn make_session(
     let mut rng = rand::thread_rng();
     let first = times[start_idx];
     let last = times[end_idx];
-    let timestamp = first - Duration::hours(gaussian_gen(&mut rng, pre, 1.0));
 
-    // Session length is from the inferred start time to the last submission in the burst.
+    let pre_seconds = gaussian_gen(&mut rng, pre, PRE_VARIANCE) * 3600.0;
+    let timestamp = first - Duration::seconds(pre_seconds as i64);
+
+    // Session length is from start time to the last submission in the burst.
     let length = last - timestamp;
     let length_seconds = length
         .to_std()
