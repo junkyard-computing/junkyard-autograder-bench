@@ -73,7 +73,7 @@ cargo run -- --input input.csv --output output.csv
 ## Example
 
 ```bash
-cargo run --   --input submissions.csv   --output sessions.csv   (Optional) --pre-hours 3   (Optional) --burst-hours 6
+cargo run --   --input submissions.csv   --output sessions.csv   (Optional) --pre-hours 3   (Optional) --burst-hours 3
 ```
 
 ## Notes

@@ -21,6 +21,6 @@ pub struct Args {
 
     /// If the gap between two consecutive submissions exceeds this many hours,
     /// start a new burst.
-    #[arg(long, default_value_t = 6)]
+    #[arg(long, default_value_t = 3)]
     pub burst_hours: i64,
 }
