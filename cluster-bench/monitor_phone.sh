@@ -1,9 +1,9 @@
 watch -n 1 '
   echo "======= PHONE MONITOR ======="
   echo "GPU"
-  echo "  utilization : % of GPU busy           $(cat /sys/class/misc/mali0/device/utilization) %"
-  echo "  frequency   : current clock speed     $(( $(cat /sys/class/misc/mali0/device/cur_freq) /
-  1000 )) MHz"
+  echo "  utilization : cur/max freq            $(awk "BEGIN {printf \"%.0f\", $(cat /sys/class/misc/mali0/device/cur_freq) / $(cat /sys/class/misc/mali0/device/max_freq) * 100}") %"
+  echo "  frequency   : current clock speed     $(( $(cat /sys/class/misc/mali0/device/cur_freq) / 1000 )) MHz"
+  echo "  max freq    : max clock speed         $(( $(cat /sys/class/misc/mali0/device/max_freq) / 1000 )) MHz"
   echo ""
   echo "CPU (8 cores: 1x X1 BIG, 3x A76 MID, 4x A55 LITTLE)"
   echo "  load 1m     : avg runnable threads    $(awk "{print \$1}" /proc/loadavg)  (8.0 = all cores full)"
