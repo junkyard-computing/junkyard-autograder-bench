@@ -1,5 +1,4 @@
 """
-================
 Estimates the number of pods (compute units) needed to handle both:
   • Interactive development sessions  (HIGH priority)
   • Batch autograder job submissions   (LOW priority)
@@ -12,20 +11,20 @@ remaining time is re-queued back into the session queue (high priority).
 Batch jobs time out after BATCH_TIMEOUT_MS if no pod becomes available.
 
 Sweeps 1 → MAX_PODS using binary search and reports the minimum pod
-count that keeps the batch drop rate at or below BATCH_DROP_TARGET.
-(Sessions never drop, so there is no session drop target.)
+count that keeps BOTH targets:
+  • batch drop rate       ≤ BATCH_DROP_TARGET
+  • session p95 wait time ≤ SESSION_WAIT_TARGET_MS
 
 ─── Input CSVs ───────────────────────────────────────────────────────
 Submissions CSV columns (required):
-  student_id, attempt_number, submission_time, runtime_ms, score
-
-  submission_time  : ISO-8601 datetime  (e.g. 2026-03-10T21:14:29-07:00)
+  submission_time  : hours_since_first (float hours from first submission)
   runtime_ms       : job duration in ms (blank or -1 → row is skipped)
+  student_id       : optional
 
 Sessions CSV columns (required):
   timestamp        : ISO-8601 datetime  — when the session starts
   length_seconds   : session duration in seconds
-  student_id       : carried through for reporting
+  student_id       : optional
 """
 
 import csv
@@ -35,6 +34,7 @@ import random
 import re
 import sys
 import time
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
@@ -43,40 +43,28 @@ from typing import Optional
 # PARAMETERS  ← edit these
 # ─────────────────────────────────────────────
 
-SUBMISSIONS_CSV = "pa8_hours_pa8_runtime_n1101_synthetic.csv"   # ISO-8601 submission_time, runtime_ms
-SESSIONS_CSV    = "../submission-model/interactive-dev-sessions/sessions.csv"      # ISO-8601 timestamp, length_seconds
+SUBMISSIONS_CSV = "pa8_hours_pa8_runtime_n1101_synthetic.csv"
+SESSIONS_CSV    = "../submission-model/interactive-dev-sessions/sessions.csv"
 
-MAX_PODS        = 200      # Sweep upper bound
+MAX_PODS = 200   # Sweep upper bound
 
-# ── Drop-rate target (batch only; sessions never drop) ────────────────────────
-BATCH_DROP_TARGET = 0.05   # ≤ 5 % of batch jobs may time out
+# ── Batch jobs ────────────────────────────────────────────────────────────────
+BATCH_DROP_TARGET = 0.05   # ≤ 5% of batch jobs may time out
+BATCH_TIMEOUT_MS  = 300000    # Job dropped if it waits longer than this in queue (ms)
 
-# ── Batch timeout ─────────────────────────────────────────────────────────────
-BATCH_TIMEOUT_MS  = 300000    # Batch job dropped after waiting this long in queue (ms)
-
-# ── Interactive session cap ───────────────────────────────────────────────────
-MAX_SESSION_HOURS = 6      # A session running longer than this is evicted at the cap;
-                           # the remaining time re-enters the session queue immediately.
-
-# ── Session wait target ───────────────────────────────────────────────────────
-SESSION_WAIT_TARGET_MS  = 60_000 * 10  # p95 session wait must be ≤ this (ms); set to float('inf') to disable
-SESSION_WAIT_PERCENTILE = 95       # percentile to check (95 = "95% of sessions wait less than target")
+# ── Interactive sessions ──────────────────────────────────────────────────────
+MAX_SESSION_HOURS       = 6        # Session evicted after this; remainder re-queued
+SESSION_WAIT_TARGET_MS  = 600_000  # p95 session queue wait must be ≤ this (ms)
+SESSION_WAIT_PERCENTILE = 95       # percentile used for the wait target
 
 # ── Overhead (ms) ─────────────────────────────────────────────────────────────
-GRADESCOPE_OVERHEAD_MS = 24373.76 # Gradescope Duration + Junkyard Duration + Waiting for Scheduler
-POD_CREATION_OVERHEAD  =    2603.26 # This is the delay from when a pod is assigned until it's actually ready to run.
-OVERHEAD_JITTER_MS     =      5        # ± jitter on top of combined overhead
+GRADESCOPE_OVERHEAD_MS = 24_373.76  # Gradescope + Junkyard + Waiting-for-scheduler
+POD_CREATION_OVERHEAD  =  2_603.26  # Pod spin-up delay after assignment
+OVERHEAD_JITTER_MS     =      5     # ± random jitter on combined overhead
 
-SPEED_MULTIPLIER = float("inf")  # float('inf') = run instantly; 10 = 10× real-time
-VERBOSE          = False          # True = print every event
+SPEED_MULTIPLIER = float("inf")  # float('inf') = instant; e.g. 10 = 10× real-time
+VERBOSE          = False
 RANDOM_SEED      = 42
-
-# ─────────────────────────────────────────────
-# DERIVED CONSTANT
-# ─────────────────────────────────────────────
-
-_SESSION_CAP_MS = MAX_SESSION_HOURS * 3_600_000   # converted once at import time
-
 
 # ─────────────────────────────────────────────
 # DATA STRUCTURES
@@ -84,11 +72,10 @@ _SESSION_CAP_MS = MAX_SESSION_HOURS * 3_600_000   # converted once at import tim
 
 @dataclass(order=True)
 class Event:
-    """Simulation event ordered by sim-time."""
     time:      float
-    kind:      str           = field(compare=False)  # 'arrival' | 'completion'
+    kind:      str           = field(compare=False)   # 'arrival' | 'completion'
     item_id:   int           = field(compare=False)
-    item_type: str           = field(compare=False, default="batch")  # 'batch'|'session'
+    item_type: str           = field(compare=False, default="batch")
     duration:  float         = field(compare=False, default=0.0)
     pod_id:    Optional[int] = field(compare=False, default=None)
 
@@ -97,16 +84,15 @@ class Event:
 class BatchJob:
     job_id:          int
     student_id:      str
-    submission_time: float          # Wall-clock epoch ms when student submitted
-    arrival_time:    float          # = submission_time + overhead
-    duration:        float          # ms
+    submission_time: float   # absolute ms on shared timeline
+    arrival_time:    float   # = submission_time + overhead
+    duration:        float   # ms
     overhead:        float = 0.0
     start_time:      Optional[float] = None
     finish_time:     Optional[float] = None
     timed_out:       bool = False
-    pod_id:          Optional[int]  = None
-
-    item_type: str = field(default="batch", init=False, repr=False)
+    pod_id:          Optional[int] = None
+    item_type:       str = field(default="batch", init=False, repr=False)
 
     @property
     def wait_time(self) -> Optional[float]:
@@ -125,17 +111,14 @@ class BatchJob:
 class Session:
     session_id:   int
     student_id:   str
-    arrival_time: float          # When this slice entered the queue (ms, re-zeroed)
-    duration:     float          # Remaining time for this slice (ms)
-    # ── slice tracking ────────────────────────────────────────────────────────
-    slice_index:  int   = 0      # 0 = original, 1+ = re-queued continuation slices
-    original_id:  int   = -1     # session_id of the original Session (same for slices)
-    # ── timing ────────────────────────────────────────────────────────────────
+    arrival_time: float   # absolute ms on shared timeline
+    duration:     float   # ms (remaining for this slice)
+    slice_index:  int   = 0
+    original_id:  int   = -1
     actual_start: Optional[float] = None
     finish_time:  Optional[float] = None
     pod_id:       Optional[int]   = None
-
-    item_type: str = field(default="session", init=False, repr=False)
+    item_type:    str = field(default="session", init=False, repr=False)
 
     def __post_init__(self):
         if self.original_id == -1:
@@ -153,20 +136,26 @@ class Session:
 # ─────────────────────────────────────────────
 
 def _parse_iso(s: str) -> float:
-    """Parse an ISO-8601 datetime string → epoch milliseconds."""
+    """ISO-8601 datetime string → epoch milliseconds."""
     s = s.strip()
-    # Normalise ±HH:MM timezone offset to ±HHMM for strptime compatibility
     s = re.sub(r'([+-]\d{2}):(\d{2})$', r'\1\2', s)
     try:
         dt = datetime.strptime(s, "%Y-%m-%dT%H:%M:%S.%f%z")
     except ValueError:
         dt = datetime.strptime(s, "%Y-%m-%dT%H:%M:%S%z")
-    return dt.timestamp() * 1000.0   # → ms
+    return dt.timestamp() * 1000.0
 
-def parse_time(s: str) -> float:
+
+def _parse_hours(s: str) -> float:
+    """
+    hours_since_first string → milliseconds.
+      plain float  → hours:  "1.5"       → 5_400_000 ms
+      HH:MM        → hours+min
+      HH:MM:SS     → hours+min+sec
+    """
     s = s.strip()
     if ":" not in s:
-        return float(s) * 3_600_000   # hours → ms
+        return float(s) * 3_600_000
 
     parts = s.split(":")
     if len(parts) == 2:
@@ -177,15 +166,16 @@ def parse_time(s: str) -> float:
         total_sec = int(h) * 3600 + int(m) * 60 + float(sec)
     else:
         raise ValueError(f"Unrecognised time format: {s!r}")
-    return total_sec * 1000   # ← was missing entirely
+    return total_sec * 1000
 
 
 def load_submissions(path: str) -> list[BatchJob]:
     """
-    Load batch jobs from the submissions CSV.
-    Rows with missing or negative runtime_ms are skipped.
+    Load batch jobs.  submission_time is stored as relative ms
+    (hours_since_first → ms).  _align_timelines() converts it to
+    absolute ms on the shared session timeline before the sim runs.
     """
-    jobs = []
+    jobs    = []
     skipped = 0
     with open(path, newline="") as f:
         reader = csv.DictReader(f)
@@ -205,7 +195,11 @@ def load_submissions(path: str) -> list[BatchJob]:
                 skipped += 1
                 continue
 
-            sub_ms = parse_time(row[fields["submission_time"]])
+            # Accept either column name
+            time_col = fields.get("hours_since_first") or fields.get("submission_time")
+            if not time_col:
+                raise ValueError("Submissions CSV needs 'hours_since_first' or 'submission_time'.")
+            sub_ms = _parse_hours(row[time_col])
             sid    = row.get(fields.get("student_id", ""), "?").strip()
 
             jobs.append(BatchJob(
@@ -218,19 +212,13 @@ def load_submissions(path: str) -> list[BatchJob]:
 
     if not jobs:
         raise ValueError("No valid jobs found in submissions CSV.")
-
-    # Re-zeroing is handled independently by _rezero_jobs() in __main__.
-
     if skipped:
         print(f"  Skipped {skipped} submission row(s) with missing/negative runtime_ms.")
     return jobs
 
 
 def load_sessions(path: str) -> list[Session]:
-    """
-    Load interactive sessions from the sessions CSV.
-    Columns: timestamp (ISO-8601), length_seconds, student_id
-    """
+    """Load sessions. arrival_time is absolute epoch ms from ISO-8601 timestamp."""
     sessions = []
     with open(path, newline="") as f:
         reader = csv.DictReader(f)
@@ -239,7 +227,7 @@ def load_sessions(path: str) -> list[Session]:
         for i, row in enumerate(reader):
             ts_ms    = _parse_iso(row[fields["timestamp"]])
             length_s = float(row[fields["length_seconds"]])
-            sid      = row.get(fields.get("student_id", ""), "?").strip()
+            sid      = row.get(fields.get("student_id", ""), f"s{i}").strip() or f"s{i}"
 
             sessions.append(Session(
                 session_id   = i,
@@ -253,23 +241,39 @@ def load_sessions(path: str) -> list[Session]:
     return sessions
 
 
-def _rezero_jobs(jobs: list[BatchJob]):
-    """Re-zero batch jobs so the first submission is at t=0."""
-    t0 = min(j.submission_time for j in jobs)
-    for j in jobs:
-        j.submission_time -= t0
-        j.arrival_time    -= t0
+def _align_timelines(jobs: list[BatchJob], sessions: list[Session]):
+    """
+    Place both workloads on a shared timeline.
 
+    Sessions have absolute epoch ms timestamps.
+    Jobs have relative ms (hours_since_first).
 
-def _rezero_sessions(sessions: list[Session]):
-    """Re-zero sessions independently so the first session starts at t=0."""
-    t0 = min(s.arrival_time for s in sessions)
+    Strategy:
+      1. Re-zero sessions so the first session is at t=0.
+      2. The job timeline already starts at 0 (hours_since_first=0 is the
+         first submission).  We treat those two t=0 points as coincident —
+         i.e. we assume the first submission and the first session start at
+         roughly the same time.  If your data has a known offset between
+         them, add it as JOB_START_OFFSET_MS below.
+
+    If you know the exact wall-clock time of the first submission, set
+    JOB_START_OFFSET_MS to (first_submission_epoch_ms - first_session_epoch_ms).
+    """
+    JOB_START_OFFSET_MS = 0   # ← adjust if first submission ≠ first session
+
+    # Re-zero sessions
+    session_t0 = min(s.arrival_time for s in sessions)
     for s in sessions:
-        s.arrival_time -= t0
+        s.arrival_time -= session_t0
+
+    # Place jobs on the same axis (relative ms + offset)
+    for j in jobs:
+        j.submission_time = j.submission_time + JOB_START_OFFSET_MS
+        j.arrival_time    = j.submission_time   # overhead applied later
 
 
 def apply_batch_overhead(jobs: list[BatchJob], overhead_ms: float,
-                          jitter_ms: float, seed) -> list[BatchJob]:
+                         jitter_ms: float, seed) -> list[BatchJob]:
     rng = random.Random(seed)
     for job in jobs:
         jitter           = rng.uniform(-jitter_ms, jitter_ms) if jitter_ms > 0 else 0.0
@@ -279,49 +283,42 @@ def apply_batch_overhead(jobs: list[BatchJob], overhead_ms: float,
     return jobs
 
 
-def print_data_diagnostics(jobs: list[BatchJob], sessions: list[Session]):
-    """
-    Print inter-arrival and duration distributions so you can choose
-    sensible values for BATCH_TIMEOUT_MS and MAX_SESSION_HOURS.
-    """
-    import statistics
+# ─────────────────────────────────────────────
+# DIAGNOSTICS
+# ─────────────────────────────────────────────
 
-    durations   = sorted(j.duration for j in jobs)
-    arrivals    = sorted(j.arrival_time for j in jobs)
-    inter_arr   = [b - a for a, b in zip(arrivals, arrivals[1:])]
-    ses_dur_h   = sorted(s.duration / 3_600_000 for s in sessions)
+def print_data_diagnostics(jobs: list[BatchJob], sessions: list[Session]):
+    durations = sorted(j.duration     for j in jobs)
+    arrivals  = sorted(j.arrival_time for j in jobs)
+    inter_arr = sorted(b - a for a, b in zip(arrivals, arrivals[1:]))
+    ses_dur_h = sorted(s.duration / 3_600_000 for s in sessions)
 
     def pct(data, p):
-        if not data:
-            return 0.0
-        idx = int(len(data) * p / 100)
-        return data[min(idx, len(data) - 1)]
+        if not data: return 0.0
+        return data[min(int(len(data) * p / 100), len(data) - 1)]
 
-    print(f"\n{'─'*60}")
+    print(f"\n{'─'*64}")
     print(f"  DATA DIAGNOSTICS")
-    print(f"{'─'*60}")
-    print(f"  Batch jobs  ({len(jobs)} total)")
-    print(f"    Duration  min={durations[0]:.1f}ms  "
-          f"p50={pct(durations,50):.1f}ms  "
-          f"p95={pct(durations,95):.1f}ms  "
-          f"max={durations[-1]:.1f}ms")
+    print(f"{'─'*64}")
+    print(f"  Shared timeline: sessions t=0 is first session arrival;")
+    print(f"    jobs are placed relative to that same origin.")
+    print(f"    First job arrival : {min(j.arrival_time for j in jobs)/3_600_000:.3f}h")
+    print(f"    Last  job arrival : {max(j.arrival_time for j in jobs)/3_600_000:.3f}h")
+    print(f"    First session     : {min(s.arrival_time for s in sessions)/3_600_000:.3f}h")
+    print(f"    Last  session     : {max(s.arrival_time for s in sessions)/3_600_000:.3f}h")
+    print(f"\n  Batch jobs  ({len(jobs)} total)")
+    print(f"    Duration   min={durations[0]:.1f}ms  p50={pct(durations,50):.1f}ms  "
+          f"p95={pct(durations,95):.1f}ms  max={durations[-1]:.1f}ms")
     if inter_arr:
-        inter_arr_s = sorted(inter_arr)
-        print(f"    Inter-arrival  "
-              f"min={inter_arr_s[0]:.0f}ms  "
-              f"p50={pct(inter_arr_s,50):.0f}ms  "
-              f"p95={pct(inter_arr_s,95):.0f}ms  "
-              f"max={inter_arr_s[-1]:.0f}ms")
-    print(f"    Suggested BATCH_TIMEOUT_MS: "
-          f"try p95 inter-arrival ≈ {pct(sorted(inter_arr),95):.0f}ms "
-          f"or a fixed SLA (e.g. 30000 = 30s)")
+        print(f"    Inter-arr  min={inter_arr[0]:.0f}ms  p50={pct(inter_arr,50):.0f}ms  "
+              f"p95={pct(inter_arr,95):.0f}ms  max={inter_arr[-1]:.0f}ms")
+        print(f"    Suggested BATCH_TIMEOUT_MS ≈ p95 inter-arrival = "
+              f"{pct(inter_arr,95):.0f}ms")
     print(f"\n  Sessions  ({len(sessions)} total)")
-    print(f"    Duration  min={ses_dur_h[0]:.2f}h  "
-          f"p50={pct(ses_dur_h,50):.2f}h  "
-          f"p95={pct(ses_dur_h,95):.2f}h  "
-          f"max={ses_dur_h[-1]:.2f}h")
-    print(f"    Current MAX_SESSION_HOURS = {MAX_SESSION_HOURS}h")
-    print(f"{'─'*60}\n")
+    print(f"    Duration   min={ses_dur_h[0]:.2f}h  p50={pct(ses_dur_h,50):.2f}h  "
+          f"p95={pct(ses_dur_h,95):.2f}h  max={ses_dur_h[-1]:.2f}h")
+    print(f"    MAX_SESSION_HOURS = {MAX_SESSION_HOURS}h")
+    print(f"{'─'*64}\n")
 
 
 # ─────────────────────────────────────────────
@@ -337,36 +334,20 @@ def run_simulation(
     speed:         float,
     verbose:       bool,
 ) -> tuple[list[BatchJob], list[Session]]:
-    """
-    Discrete-event simulation.
-
-    Priority (high → low):
-      1. Interactive sessions  — never dropped; wait indefinitely
-      2. Batch autograder jobs — dropped after batch_timeout ms in queue
-
-    Session cap (session_cap ms):
-      When a session is dispatched, it runs for min(remaining_duration, cap).
-      If the session is cut short, a new Session slice is created and pushed
-      to the FRONT of the session queue at the moment the pod is freed, so it
-      immediately competes for the next available pod.
-
-    Returns deep copies of jobs and all session slices (including continuations).
-    """
     jobs     = copy.deepcopy(base_jobs)
     sessions = copy.deepcopy(base_sessions)
 
-    event_queue:   list[Event]    = []
+    event_queue:   list[Event]   = []
     pod_idle = [True] * num_pods
 
-    session_queue: list[Session]  = []   # high-priority FIFO (prepend for continuations)
-    batch_queue:   list[BatchJob] = []   # low-priority FIFO
+    session_queue: list[Session]  = []
+    batch_queue:   list[BatchJob] = []
 
     job_map     = {j.job_id:     j for j in jobs}
     session_map = {s.session_id: s for s in sessions}
 
-    # Track all session slices created during the run (for stats)
-    all_slices: list[Session] = list(sessions)
-    next_slice_id = len(sessions)   # IDs for continuation slices
+    all_slices:   list[Session] = list(sessions)
+    next_slice_id = len(sessions)
 
     for j in jobs:
         heapq.heappush(event_queue, Event(
@@ -389,7 +370,7 @@ def run_simulation(
             time.sleep(delta)
 
     def try_dispatch(current_time: float):
-        # ── Expire timed-out batch jobs (sessions never time out) ──────────
+        # Expire timed-out batch jobs (sessions never time out)
         i = 0
         while i < len(batch_queue):
             j = batch_queue[i]
@@ -397,64 +378,56 @@ def run_simulation(
                 batch_queue.pop(i)
                 j.timed_out = True
                 if verbose:
-                    print(f"  [t={current_time:14.1f}ms] ✗ Job     {j.job_id:3d} "
-                          f"(student {j.student_id}) TIMED OUT "
+                    print(f"  [t={current_time:14.1f}ms] ✗ Job {j.job_id:3d} "
+                          f"student {j.student_id} TIMED OUT "
                           f"(waited {current_time - j.arrival_time:.1f}ms)")
             else:
                 i += 1
 
-        # ── Assign idle pods: sessions first, then batch ───────────────────
+        # Assign idle pods: sessions first, then batch
         for queue, label in ((session_queue, "session"), (batch_queue, "batch")):
             while queue:
                 idle_pod = next((i for i, idle in enumerate(pod_idle) if idle), None)
                 if idle_pod is None:
-                    return   # No pod available for anyone right now
+                    return
 
                 item = queue.pop(0)
                 pod_idle[idle_pod] = False
 
                 if label == "session":
-                    # Cap how long this slice runs
                     run_for = min(item.duration, session_cap)
                     finish  = current_time + run_for
-
                     item.actual_start = current_time
                     item.finish_time  = finish
                     item.pod_id       = idle_pod
+                    item._remaining   = item.duration - run_for  # type: ignore[attr-defined]
 
                     if verbose:
                         capped = " [CAPPED]" if run_for < item.duration else ""
-                        print(f"  [t={current_time:14.1f}ms] → Session {item.session_id:3d}"
-                              f"(orig {item.original_id}, slice {item.slice_index}) "
-                              f"student {item.student_id} on Pod {idle_pod} "
-                              f"(wait {current_time - item.arrival_time:.1f}ms, "
-                              f"run {run_for/3_600_000:.2f}h){capped}")
+                        print(f"  [t={current_time:14.1f}ms] → Session {item.session_id:3d} "
+                              f"(orig {item.original_id} slice {item.slice_index}) "
+                              f"student {item.student_id} pod {idle_pod} "
+                              f"wait={current_time - item.arrival_time:.1f}ms "
+                              f"run={run_for/3_600_000:.2f}h{capped}")
 
                     heapq.heappush(event_queue, Event(
                         time=finish, kind="completion",
-                        item_id=item.session_id, item_type="session",
-                        pod_id=idle_pod,
+                        item_id=item.session_id, item_type="session", pod_id=idle_pod,
                     ))
-
-                    # If capped, store remaining duration so the completion handler
-                    # can create and re-queue a continuation slice.
-                    item._remaining = item.duration - run_for   # type: ignore[attr-defined]
-
                 else:
                     item.start_time  = current_time
                     item.finish_time = current_time + item.duration
                     item.pod_id      = idle_pod
 
                     if verbose:
-                        print(f"  [t={current_time:14.1f}ms] → Job     {item.job_id:3d} "
-                              f"student {item.student_id} on Pod {idle_pod} "
-                              f"(wait {current_time - item.arrival_time:.1f}ms, "
-                              f"dur {item.duration:.1f}ms)")
+                        print(f"  [t={current_time:14.1f}ms] → Job {item.job_id:3d} "
+                              f"student {item.student_id} pod {idle_pod} "
+                              f"wait={current_time - item.arrival_time:.1f}ms "
+                              f"dur={item.duration:.1f}ms")
 
                     heapq.heappush(event_queue, Event(
                         time=item.finish_time, kind="completion",
-                        item_id=item.job_id, item_type="batch",
-                        pod_id=idle_pod,
+                        item_id=item.job_id, item_type="batch", pod_id=idle_pod,
                     ))
 
     if verbose:
@@ -471,18 +444,16 @@ def run_simulation(
         if event.kind == "arrival":
             if event.item_type == "session":
                 s = session_map[event.item_id]
+                session_queue.append(s)
                 if verbose:
                     print(f"  [t={sim_time:14.1f}ms] ↓ Session {s.session_id:3d} "
-                          f"student {s.student_id} arrived "
-                          f"(dur {s.duration/3_600_000:.2f}h)")
-                session_queue.append(s)
+                          f"student {s.student_id} arrived dur={s.duration/3_600_000:.2f}h")
             else:
                 j = job_map[event.item_id]
-                if verbose:
-                    print(f"  [t={sim_time:14.1f}ms] ↓ Job     {j.job_id:3d} "
-                          f"student {j.student_id} arrived "
-                          f"(dur {j.duration:.1f}ms)")
                 batch_queue.append(j)
+                if verbose:
+                    print(f"  [t={sim_time:14.1f}ms] ↓ Job {j.job_id:3d} "
+                          f"student {j.student_id} arrived dur={j.duration:.1f}ms")
             try_dispatch(sim_time)
 
         elif event.kind == "completion":
@@ -490,41 +461,33 @@ def run_simulation(
             pod_idle[pod_id] = True
 
             if event.item_type == "session":
-                # Retrieve the Session object that just finished its slice
                 finished_slice = session_map[event.item_id]
                 remaining      = getattr(finished_slice, "_remaining", 0.0)
-
                 if verbose:
                     print(f"  [t={sim_time:14.1f}ms] ✓ Session {finished_slice.session_id:3d} "
-                          f"(orig {finished_slice.original_id}) finished slice on Pod {pod_id}"
+                          f"(orig {finished_slice.original_id}) done pod {pod_id}"
                           + (f" → {remaining/3_600_000:.2f}h re-queued" if remaining > 0 else ""))
 
                 if remaining > 0:
-                    # Create a continuation slice and push to FRONT of session queue
-                    # so it wins the next pod as soon as one is free.
-                    nonlocal_id = next_slice_id
-                    next_slice_id += 1   # closure mutation — works in Python 3
-
-                    continuation = Session(
+                    nonlocal_id   = next_slice_id
+                    next_slice_id += 1
+                    continuation  = Session(
                         session_id   = nonlocal_id,
                         student_id   = finished_slice.student_id,
-                        arrival_time = sim_time,          # re-queued right now
+                        arrival_time = sim_time,
                         duration     = remaining,
                         slice_index  = finished_slice.slice_index + 1,
                         original_id  = finished_slice.original_id,
                     )
                     session_map[nonlocal_id] = continuation
                     all_slices.append(continuation)
-                    session_queue.insert(0, continuation)   # HIGH priority: front of queue
-
+                    session_queue.insert(0, continuation)
             else:
                 if verbose:
-                    print(f"  [t={sim_time:14.1f}ms] ✓ Job     {event.item_id:3d} "
-                          f"finished on Pod {pod_id}")
+                    print(f"  [t={sim_time:14.1f}ms] ✓ Job {event.item_id:3d} done pod {pod_id}")
 
             try_dispatch(sim_time)
 
-    # Anything still queued at simulation end is recorded (not timed_out for sessions)
     for leftover in batch_queue:
         leftover.timed_out = True
 
@@ -534,6 +497,11 @@ def run_simulation(
 # ─────────────────────────────────────────────
 # REPORTING
 # ─────────────────────────────────────────────
+
+def _pct(data: list, p: float) -> float:
+    if not data: return 0.0
+    return data[min(int(len(data) * p / 100), len(data) - 1)]
+
 
 def compute_batch_stats(jobs: list[BatchJob]) -> dict:
     completed  = [j for j in jobs if not j.timed_out]
@@ -555,112 +523,95 @@ def compute_batch_stats(jobs: list[BatchJob]) -> dict:
 
 
 def compute_session_stats(slices: list[Session]) -> dict:
-    """
-    Stats are computed over original sessions (slice_index == 0), not individual slices.
-    A session is 'completed' if its final slice has a finish_time.
-    """
-    # Group slices by original_id
-    from collections import defaultdict
     groups: dict[int, list[Session]] = defaultdict(list)
     for s in slices:
         groups[s.original_id].append(s)
 
-    total_sessions  = len(groups)
     completed_count = 0
     wait_times      = []
     total_slices    = len(slices)
     capped_slices   = sum(1 for s in slices if s.slice_index > 0)
 
-    for orig_id, slist in groups.items():
+    for slist in groups.values():
         slist.sort(key=lambda x: x.slice_index)
         first = slist[0]
         last  = slist[-1]
-
         if last.finish_time is not None:
             completed_count += 1
-
-        # Wait time = time first slice spent in queue before getting a pod
         if first.wait_time is not None:
             wait_times.append(first.wait_time)
 
-    # compute p95 (or whatever percentile) of initial wait times
     wait_times_sorted = sorted(wait_times)
-    def _pct(data, p):
-        if not data: return 0.0
-        idx = int(len(data) * p / 100)
-        return data[min(idx, len(data) - 1)]
-        
-
     return {
-        "total":          total_sessions,
-        "completed":      completed_count,
-        "drop_rate":      0.0,          # sessions never drop
-        "avg_wait":       sum(wait_times) / len(wait_times) if wait_times else 0,
-        "max_wait":       max(wait_times)                   if wait_times else 0,
-        "total_slices":   total_slices,
-        "capped_slices":  capped_slices,
-        "p95_wait": _pct(wait_times_sorted, SESSION_WAIT_PERCENTILE),
+        "total":         len(groups),
+        "completed":     completed_count,
+        "avg_wait":      sum(wait_times) / len(wait_times) if wait_times else 0,
+        "max_wait":      max(wait_times)                   if wait_times else 0,
+        "p_wait":        _pct(wait_times_sorted, SESSION_WAIT_PERCENTILE),
+        "total_slices":  total_slices,
+        "capped_slices": capped_slices,
     }
 
 
-def meets_target(b_stats: dict, s_stats: dict) -> bool:
-    session_ok = s_stats["p95_wait"]  <= SESSION_WAIT_TARGET_MS
-    submission_ok = b_stats["drop_rate"] <= BATCH_DROP_TARGET
-    return session_ok and submission_ok
+def meets_target(b: dict, s: dict) -> bool:
+    return (b["drop_rate"] <= BATCH_DROP_TARGET and
+            s["p_wait"]    <= SESSION_WAIT_TARGET_MS)
 
 
 def print_sweep_table(results: list[tuple[int, dict, dict]]):
-    print(f"\n{'='*90}")
-    print(f"  SWEEP RESULTS  (batch drop target ≤ {BATCH_DROP_TARGET*100:.1f}%  |  "
-          f"sessions never dropped & wait target p{SESSION_WAIT_PERCENTILE} ≤ {SESSION_WAIT_TARGET_MS/1000:.1f}s)")
-    print(f"{'='*90}")
+    p = SESSION_WAIT_PERCENTILE
+    print(f"\n{'='*100}")
+    print(f"  SWEEP RESULTS  "
+          f"(batch drop ≤ {BATCH_DROP_TARGET*100:.1f}%  |  "
+          f"session p{p} wait ≤ {SESSION_WAIT_TARGET_MS/1000:.0f}s)")
+    print(f"{'='*100}")
     print(f"  {'Pods':>5}  "
           f"{'B-done':>7}  {'B-drop':>7}  {'B-drop%':>8}  {'B-avgW':>9}  "
-          f"{'Sessions':>9}  {'S-slices':>9}  {'S-avgW':>12}  {'S-p95W':>12}    "
-          f"{'Target':>8}")
-    print("  " + "-"*87)
+          f"{'S-total':>7}  {'S-slices':>8}  {'S-avgW':>12}  "
+          f"{'S-p'+str(p)+'W':>12}  {'Target':>8}")
+    print("  " + "-"*97)
     for num_pods, b, s in sorted(results, key=lambda r: r[0]):
         ok = "✓  YES" if meets_target(b, s) else "✗  no"
         print(f"  {num_pods:>5}  "
               f"{b['completed']:>7}  {b['timed_out']:>7}  {b['drop_rate']*100:>7.1f}%  "
               f"{b['avg_wait']:>8.1f}ms  "
-              f"{s['total']:>9}  {s['total_slices']:>9}  "
+              f"{s['total']:>7}  {s['total_slices']:>8}  "
               f"{s['avg_wait']:>10.1f}ms  "
-              f"{s['p95_wait']:>10.1f}ms  "
+              f"{s['p_wait']:>10.1f}ms  "
               f"{ok:>8}")
-    print(f"{'='*90}")
+    print(f"{'='*100}")
 
 
 def print_final_report(num_pods: int, b: dict, s: dict, overhead_ms: float):
+    p = SESSION_WAIT_PERCENTILE
     print(f"\n{'='*70}")
     print(f"  RECOMMENDATION")
     print(f"{'='*70}")
-    print(f"  Minimum pods to meet target   : {num_pods}")
+    print(f"  Minimum pods to meet both targets : {num_pods}")
     print()
     print(f"  ── Batch jobs ──────────────────────────────────────────────")
     print(f"  Drop rate target    : ≤ {BATCH_DROP_TARGET*100:.1f}%")
     print(f"  Actual drop rate    : {b['drop_rate']*100:.2f}%")
     print(f"  Timeout threshold   : {BATCH_TIMEOUT_MS}ms")
-    print(f"  Combined overhead   : {overhead_ms:.3f}ms ± {OVERHEAD_JITTER_MS}ms jitter")
+    print(f"  Combined overhead   : {overhead_ms:.2f}ms "
+          f"({GRADESCOPE_OVERHEAD_MS}ms + {POD_CREATION_OVERHEAD}ms) "
+          f"± {OVERHEAD_JITTER_MS}ms jitter")
     print(f"  Avg actual overhead : {b['avg_overhead']:.2f}ms")
-    print(f"  Total / completed / dropped : "
-          f"{b['total']} / {b['completed']} / {b['timed_out']}")
+    print(f"  Total / done / drop : {b['total']} / {b['completed']} / {b['timed_out']}")
     print(f"  Avg queue wait      : {b['avg_wait']:.2f}ms")
     print(f"  Max queue wait      : {b['max_wait']:.2f}ms")
     print(f"  Avg total latency   : {b['avg_latency']:.2f}ms  (submit → done)")
     print()
     print(f"  ── Interactive sessions ────────────────────────────────────")
-    print(f"  Session cap         : {MAX_SESSION_HOURS}h  "
-          f"(remainder re-queued at front of session queue)")
-    print(f"  Sessions never dropped (wait indefinitely for a pod)")
-    print(f"  Total sessions      : {s['total']}")
-    print(f"  Completed           : {s['completed']}")
+    print(f"  Session cap         : {MAX_SESSION_HOURS}h  (remainder re-queued)")
+    print(f"  Sessions never dropped (wait indefinitely)")
+    print(f"  p{p} wait target     : ≤ {SESSION_WAIT_TARGET_MS/1000:.0f}s")
+    print(f"  Actual p{p} wait     : {s['p_wait']/1000:.2f}s")
+    print(f"  Total / completed   : {s['total']} / {s['completed']}")
     print(f"  Total slices run    : {s['total_slices']}  "
-          f"({s['capped_slices']} continuation slices from cap)")
+          f"({s['capped_slices']} continuation slices)")
     print(f"  Avg initial wait    : {s['avg_wait']:.2f}ms")
     print(f"  Max initial wait    : {s['max_wait']:.2f}ms")
-    print(f"  p{SESSION_WAIT_PERCENTILE} wait target : ≤ {SESSION_WAIT_TARGET_MS/1000:.1f}s")
-    print(f"  Actual p{SESSION_WAIT_PERCENTILE} wait  : {s['p95_wait']/1000:.2f}s")
     print(f"{'='*70}\n")
 
 
@@ -680,26 +631,28 @@ if __name__ == "__main__":
     base_sessions = load_sessions(ses_path)
     print(f"  → {len(base_sessions)} sessions loaded.")
 
-    _rezero_jobs(base_jobs)
-    _rezero_sessions(base_sessions)
+    # Align both timelines to a shared origin before applying overhead
+    _align_timelines(base_jobs, base_sessions)
 
     total_overhead = GRADESCOPE_OVERHEAD_MS + POD_CREATION_OVERHEAD
     base_jobs = apply_batch_overhead(
         base_jobs, total_overhead, OVERHEAD_JITTER_MS, seed=RANDOM_SEED
     )
-    print(f"\nBatch overhead applied   : {total_overhead:.3f}ms "
+    print(f"\nOverhead applied : {total_overhead:.2f}ms "
           f"({GRADESCOPE_OVERHEAD_MS}ms Gradescope + {POD_CREATION_OVERHEAD}ms pod spin-up) "
           f"± {OVERHEAD_JITTER_MS}ms jitter")
-    print(f"Session cap              : {MAX_SESSION_HOURS}h  "
-          f"(set MAX_SESSION_HOURS to change)")
-    print(f"Sessions never time out  : they wait until a pod is free.\n")
+    print(f"Session cap      : {MAX_SESSION_HOURS}h  |  "
+          f"Session p{SESSION_WAIT_PERCENTILE} wait target : "
+          f"≤ {SESSION_WAIT_TARGET_MS/1000:.0f}s\n")
 
     print_data_diagnostics(base_jobs, base_sessions)
 
     print(f"Binary searching 1 → {MAX_PODS} pods")
-    print(f"  Target: batch drop ≤ {BATCH_DROP_TARGET*100:.1f}%\n")
+    print(f"  Targets: batch drop ≤ {BATCH_DROP_TARGET*100:.1f}%  |  "
+          f"session p{SESSION_WAIT_PERCENTILE} wait ≤ "
+          f"{SESSION_WAIT_TARGET_MS/1000:.0f}s\n")
 
-    sweep_results:  list[tuple[int, dict, dict]] = []
+    sweep_results: list[tuple[int, dict, dict]] = []
     recommendation = None
     session_cap_ms = MAX_SESSION_HOURS * 3_600_000
 
@@ -709,18 +662,15 @@ if __name__ == "__main__":
         print(f"  [lo={lo:3d} hi={hi:3d}] Simulating {mid:3d} pods...", end="", flush=True)
         result_jobs, result_slices = run_simulation(
             base_jobs, base_sessions,
-            num_pods=mid,
-            batch_timeout=BATCH_TIMEOUT_MS,
-            session_cap=session_cap_ms,
-            speed=SPEED_MULTIPLIER,
-            verbose=VERBOSE,
+            num_pods=mid, batch_timeout=BATCH_TIMEOUT_MS,
+            session_cap=session_cap_ms, speed=SPEED_MULTIPLIER, verbose=VERBOSE,
         )
         b = compute_batch_stats(result_jobs)
         s = compute_session_stats(result_slices)
         sweep_results.append((mid, b, s))
         print(f"  batch={b['drop_rate']*100:.1f}% drop  "
-                f"s_p95wait={s['p95_wait']/1000:.1f}s  "
-                f"({'✓' if meets_target(b, s) else '✗'})")
+              f"s_p{SESSION_WAIT_PERCENTILE}wait={s['p_wait']/1000:.1f}s  "
+              f"({'✓' if meets_target(b, s) else '✗'})")
 
         if meets_target(b, s):
             hi = mid
@@ -730,22 +680,20 @@ if __name__ == "__main__":
     print(f"\n  [final] Simulating {lo:3d} pods...", end="", flush=True)
     result_jobs, result_slices = run_simulation(
         base_jobs, base_sessions,
-        num_pods=lo,
-        batch_timeout=BATCH_TIMEOUT_MS,
-        session_cap=session_cap_ms,
-        speed=SPEED_MULTIPLIER,
-        verbose=VERBOSE,
+        num_pods=lo, batch_timeout=BATCH_TIMEOUT_MS,
+        session_cap=session_cap_ms, speed=SPEED_MULTIPLIER, verbose=VERBOSE,
     )
     b = compute_batch_stats(result_jobs)
     s = compute_session_stats(result_slices)
     sweep_results.append((lo, b, s))
-    print(f"  batch={b['drop_rate']*100:.1f}% drop  session_slices={s['total_slices']}")
+    print(f"  batch={b['drop_rate']*100:.1f}% drop  "
+          f"s_p{SESSION_WAIT_PERCENTILE}wait={s['p_wait']/1000:.1f}s")
 
     if meets_target(b, s):
         recommendation = (lo, b, s)
-        print(f"\n  ★  Minimum pods to meet target: {lo}\n")
+        print(f"\n  ★  Minimum pods to meet both targets: {lo}\n")
     else:
-        print(f"\n  ✗  Could not meet target within {MAX_PODS} pods.\n")
+        print(f"\n  ✗  Could not meet both targets within {MAX_PODS} pods.\n")
 
     print_sweep_table(sweep_results)
 
@@ -757,9 +705,10 @@ if __name__ == "__main__":
             overhead_ms = total_overhead,
         )
     else:
-        print(f"\n  ⚠  Batch drop target NOT met within {MAX_PODS} pods.")
-        best_pods, best_b, best_s = min(sweep_results, key=lambda r: r[1]["drop_rate"])
-        print(f"     Best result: {best_b['drop_rate']*100:.2f}% drop rate "
-              f"at {best_pods} pods.")
-        print(f"     Try: raise MAX_PODS, increase BATCH_TIMEOUT_MS, "
-              f"or relax BATCH_DROP_TARGET.\n")
+        print(f"\n  ⚠  Targets NOT met within {MAX_PODS} pods.")
+        best = min(sweep_results, key=lambda r: r[1]["drop_rate"] + r[2]["p_wait"] / 1e9)
+        print(f"     Best: {best[1]['drop_rate']*100:.2f}% batch drop  "
+              f"p{SESSION_WAIT_PERCENTILE} wait={best[2]['p_wait']/1000:.1f}s  "
+              f"at {best[0]} pods.")
+        print(f"     Try: raise MAX_PODS, adjust BATCH_TIMEOUT_MS, "
+              f"or relax targets.\n")
