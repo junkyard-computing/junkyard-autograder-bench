@@ -1,0 +1,5 @@
+Timestamp (gradescope start): 7967557
+Timestamp (gradescope -> junkyard, start): 161196035
+Timestamp (gradescope -> junkyard, end): 4393940805
+Timestamp (job a60de50c-4fd8-454f-b839-0c485f85091b, node pf-028: pod created): 25513965437
+Timestamp (job a60de50c-4fd8-454f-b839-0c485f85091b, node pf-028: output returned, success): 28513965437

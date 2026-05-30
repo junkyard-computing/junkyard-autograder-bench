@@ -1,0 +1,39 @@
+Timestamp (gradescope start): 1780100078114361832
+========================================
+Preparing job for Time: 2000000 µs
+Transferring payload to cluster...
+Timestamp (gradescope -> junkyard, start): 1780100078254653784
+DEBUG: Starting internal submission script.
+DEBUG: Waiting for tunnel handshake...
+DEBUG: Go server found at internal IP: http://localhost:8888
+DEBUG: Submitting job to Go server at http://localhost:8888/submit.
+Timestamp (gradescope -> junkyard, end): 1780100079976667158
+DEBUG: Submit HTTP Status: 202
+DEBUG: Parsed JOB_ID: 'c5624b9d-7bc2-4bcf-b225-607f6821742d'. Polling for results...
+DEBUG: Polling URL: http://localhost:8888/status/c5624b9d-7bc2-4bcf-b225-607f6821742d (Time remaining: 300s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://localhost:8888/status/c5624b9d-7bc2-4bcf-b225-607f6821742d (Time remaining: 294s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://localhost:8888/status/c5624b9d-7bc2-4bcf-b225-607f6821742d (Time remaining: 289s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://localhost:8888/status/c5624b9d-7bc2-4bcf-b225-607f6821742d (Time remaining: 284s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://localhost:8888/status/c5624b9d-7bc2-4bcf-b225-607f6821742d (Time remaining: 279s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://localhost:8888/status/c5624b9d-7bc2-4bcf-b225-607f6821742d (Time remaining: 274s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://localhost:8888/status/c5624b9d-7bc2-4bcf-b225-607f6821742d (Time remaining: 269s)
+DEBUG: Current Job Status: succeeded
+DEBUG: Job c5624b9d-7bc2-4bcf-b225-607f6821742d completed. Fetching raw logs...
+Timestamp (job c5624b9d-7bc2-4bcf-b225-607f6821742d, node pf-027: pod created): 1780100098000000000
+Timestamp (job c5624b9d-7bc2-4bcf-b225-607f6821742d, node pf-027: output returned, success): 1780100101000000000
+DEBUG: Raw JOB_RESULTS_OUTPUT:
+{
+    "score": 100,
+    "output": "Compiling...\ncd helper_lib; make\nmake[1]: Entering directory '/autograder/submission/helper_lib'\ngcc -g -Wall -c -o device.o device.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o kernel.o kernel.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o matrix.o matrix.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o img.o img.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\nar rcs helper_lib.a device.o kernel.o matrix.o img.o\nmake[1]: Leaving directory '/autograder/submission/helper_lib'\ngcc -g -Wall -o solution helper_lib/helper_lib.a main.c -I helper_lib -I/usr/local/cuda/include helper_lib/helper_lib.a -lm -L/usr/local/cuda/lib64 -lOpenCL\nRunning solution with time: 2000000\n==============Starting Work==============\nRunning on:\n\tPlatform: ARM Platform\n\tDevice: Mali-G710 r0p0\n\nCalls: 30\nElapsed: 2067974.820 us\nTotal FLOPs: 5.154e+11\nPerformance: 249.23 GFLOPS (FP32)\n===============End of Work===============\n"
+}
+DEBUG: Job succeeded. Formatting final JSON.
+{
+  "score": 100,
+  "output": "Compiling...\ncd helper_lib; make\nmake[1]: Entering directory '/autograder/submission/helper_lib'\ngcc -g -Wall -c -o device.o device.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o kernel.o kernel.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o matrix.o matrix.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o img.o img.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\nar rcs helper_lib.a device.o kernel.o matrix.o img.o\nmake[1]: Leaving directory '/autograder/submission/helper_lib'\ngcc -g -Wall -o solution helper_lib/helper_lib.a main.c -I helper_lib -I/usr/local/cuda/include helper_lib/helper_lib.a -lm -L/usr/local/cuda/lib64 -lOpenCL\nRunning solution with time: 2000000\n==============Starting Work==============\nRunning on:\n\tPlatform: ARM Platform\n\tDevice: Mali-G710 r0p0\n\nCalls: 30\nElapsed: 2067974.820 us\nTotal FLOPs: 5.154e+11\nPerformance: 249.23 GFLOPS (FP32)\n===============End of Work===============\n\n\n--- EXECUTION LOGS ---\nStarting autograder from /autograder/source...\nExecuting benchmark inside /autograder/submission..."
+}

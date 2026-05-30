@@ -1,0 +1,35 @@
+Timestamp (gradescope start): 1780094710858990025
+========================================
+Preparing job for Time: 2000000 µs
+Transferring payload to cluster...
+Timestamp (gradescope -> junkyard, start): 1780094711003166715
+DEBUG: Starting internal submission script.
+DEBUG: Waiting for tunnel handshake...
+DEBUG: Go server found at internal IP: http://localhost:8888
+DEBUG: Submitting job to Go server at http://localhost:8888/submit.
+Timestamp (gradescope -> junkyard, end): 1780094713381347676
+DEBUG: Submit HTTP Status: 202
+DEBUG: Parsed JOB_ID: 'b42ad09d-7226-4a9a-9f36-25d7280b0e65'. Polling for results...
+DEBUG: Polling URL: http://localhost:8888/status/b42ad09d-7226-4a9a-9f36-25d7280b0e65 (Time remaining: 300s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://localhost:8888/status/b42ad09d-7226-4a9a-9f36-25d7280b0e65 (Time remaining: 295s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://localhost:8888/status/b42ad09d-7226-4a9a-9f36-25d7280b0e65 (Time remaining: 290s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://localhost:8888/status/b42ad09d-7226-4a9a-9f36-25d7280b0e65 (Time remaining: 285s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://localhost:8888/status/b42ad09d-7226-4a9a-9f36-25d7280b0e65 (Time remaining: 280s)
+DEBUG: Current Job Status: succeeded
+DEBUG: Job b42ad09d-7226-4a9a-9f36-25d7280b0e65 completed. Fetching raw logs...
+Timestamp (job b42ad09d-7226-4a9a-9f36-25d7280b0e65, node pf-028: pod created): 1780094725000000000
+Timestamp (job b42ad09d-7226-4a9a-9f36-25d7280b0e65, node pf-028: output returned, success): 1780094727000000000
+DEBUG: Raw JOB_RESULTS_OUTPUT:
+{
+    "score": 100,
+    "output": "Compiling...\ncd helper_lib; make\nmake[1]: Entering directory '/autograder/submission/helper_lib'\ngcc -g -Wall -c -o device.o device.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o kernel.o kernel.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o matrix.o matrix.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o img.o img.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\nar rcs helper_lib.a device.o kernel.o matrix.o img.o\nmake[1]: Leaving directory '/autograder/submission/helper_lib'\ngcc -g -Wall -o solution helper_lib/helper_lib.a main.c -I helper_lib -I/usr/local/cuda/include helper_lib/helper_lib.a -lm -L/usr/local/cuda/lib64 -lOpenCL\nRunning solution with time: 2000000\n==============Starting Work==============\nRunning on:\n\tPlatform: ARM Platform\n\tDevice: Mali-G710 r0p0\n\nCalls: 29\nElapsed: 2018205.779 us\nTotal FLOPs: 4.982e+11\nPerformance: 246.86 GFLOPS (FP32)\n===============End of Work===============\n"
+}
+DEBUG: Job succeeded. Formatting final JSON.
+{
+  "score": 100,
+  "output": "Compiling...\ncd helper_lib; make\nmake[1]: Entering directory '/autograder/submission/helper_lib'\ngcc -g -Wall -c -o device.o device.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o kernel.o kernel.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o matrix.o matrix.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o img.o img.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\nar rcs helper_lib.a device.o kernel.o matrix.o img.o\nmake[1]: Leaving directory '/autograder/submission/helper_lib'\ngcc -g -Wall -o solution helper_lib/helper_lib.a main.c -I helper_lib -I/usr/local/cuda/include helper_lib/helper_lib.a -lm -L/usr/local/cuda/lib64 -lOpenCL\nRunning solution with time: 2000000\n==============Starting Work==============\nRunning on:\n\tPlatform: ARM Platform\n\tDevice: Mali-G710 r0p0\n\nCalls: 29\nElapsed: 2018205.779 us\nTotal FLOPs: 4.982e+11\nPerformance: 246.86 GFLOPS (FP32)\n===============End of Work===============\n\n\n--- EXECUTION LOGS ---\nStarting autograder from /autograder/source...\nExecuting benchmark inside /autograder/submission..."
+}
