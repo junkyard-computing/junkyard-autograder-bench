@@ -16,6 +16,7 @@ import copy
 import time
 import heapq
 import random
+import sys
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -23,9 +24,9 @@ from typing import Optional
 # PARAMETERS  ← edit these
 # ─────────────────────────────────────────────
 
-CSV_PATH               = "mock_submissions_300.csv"  # Set to None to use synthetic mock data.
-
-MAX_PODS               = 8      # Sweep will try 1 pod up to this many, then stop.
+# CSV_PATH               = "pa7_hours_pa8_runtime_n90_synthetic.csv"  # Set to None to use synthetic mock data.
+CSV_PATH = "pa8_hours_pa8_runtime_n1101_synthetic.csv" 
+MAX_PODS               = 200      # Sweep will try 1 pod up to this many, then stop.
 
 DROP_RATE_TARGET       = 0.05   # Stop sweep at the first pod count where drop rate ≤ this.
                                 # e.g. 0.05 = allow at most 5% of jobs to time out.
@@ -97,18 +98,33 @@ class Job:
 
 def parse_time(s: str) -> float:
     """
-    Convert a time string → milliseconds.
-    Handles: HH:MM  |  HH:MM:SS  |  HH:MM:SS.mmm
+    Convert a time string to milliseconds.
+
+    Supported formats:
+      - seconds as float: "73.3552"
+      - HH:MM
+      - HH:MM:SS
+      - HH:MM:SS.mmm
     """
-    parts = s.strip().split(":")
+    s = s.strip()
+
+    # Plain numeric seconds
+    if ":" not in s:
+        return float(s) * 1000
+
+    parts = s.split(":")
+
     if len(parts) == 2:
         h, m = parts
         total_sec = int(h) * 3600 + int(m) * 60
+
     elif len(parts) == 3:
         h, m, sec = parts
         total_sec = int(h) * 3600 + int(m) * 60 + float(sec)
+
     else:
         raise ValueError(f"Unrecognised time format: {s!r}")
+
     return total_sec * 1000
 
 
@@ -139,8 +155,8 @@ def load_csv(path: str) -> list[Job]:
         raw_fields = reader.fieldnames or []
         field_map  = {name.strip().lower().replace(" ", "_"): name for name in raw_fields}
 
-        time_col     = field_map.get("submission_time") or field_map.get("time")
-        duration_col = field_map.get("job_time") or field_map.get("duration")
+        time_col     = field_map.get("hours_since_first") or field_map.get("time")
+        duration_col = field_map.get("runtime_ms") or field_map.get("duration")
 
         if not time_col or not duration_col:
             raise ValueError(
@@ -355,13 +371,17 @@ def print_final_report(num_pods: int, stats: dict, timeout: float,
 # ─────────────────────────────────────────────
 
 if __name__ == "__main__":
+    csv_path = None
+    if len(sys.argv) > 1 and sys.argv[1].strip():
+        csv_path = sys.argv[1].strip()
+
     # ── Load data ────────────────────────────
-    if CSV_PATH:
-        print(f"Loading jobs from: {CSV_PATH}")
-        base_jobs = load_csv(CSV_PATH)
+    if csv_path:
+        print(f"Loading jobs from: {csv_path}")
+        base_jobs = load_csv(csv_path)
     else:
         print("No CSV_PATH set — using synthetic mock data.")
-        base_jobs = generate_mock_jobs()
+        exit(1)
 
     print(f"Loaded {len(base_jobs)} jobs.")
 
@@ -374,34 +394,52 @@ if __name__ == "__main__":
           f"({GRADESCOPE_OVERHEAD_MS}ms Gradescope + {POD_CREATION_OVERHEAD}ms pod creation) "
           f"± {OVERHEAD_JITTER_MS}ms jitter\n")
 
-    # ── Sweep pod counts 1 → MAX_PODS ────────────────────────────────────────
-    print(f"Sweeping 1 to {MAX_PODS} pod(s), target drop rate ≤ {DROP_RATE_TARGET*100:.1f}%\n")
-
-    sweep_results  = []   # [(num_pods, stats), ...]
+    # ── Binary search for minimum pods meeting target drop rate ──────────────
+    print(f"Binary searching 1 to {MAX_PODS} pod(s), target drop rate ≤ {DROP_RATE_TARGET*100:.1f}%\n")
+    sweep_results  = []
     recommendation = None
 
-    for num_pods in range(1, MAX_PODS + 1):
-        print(f"  [{num_pods}/{MAX_PODS}] Simulating {num_pods} pod(s)...", end="", flush=True)
-
+    lo, hi = 1, MAX_PODS
+    while lo < hi:
+        mid = (lo + hi) // 2
+        print(f"  [lo={lo} hi={hi}] Simulating {mid} pod(s)...", end="", flush=True)
         result_jobs = run_simulation(
-            base_jobs, num_pods=num_pods, timeout=TIMEOUT_MS,
+            base_jobs, num_pods=mid, timeout=TIMEOUT_MS,
             speed=SPEED_MULTIPLIER, verbose=VERBOSE,
         )
         stats = compute_stats(result_jobs)
-        sweep_results.append((num_pods, stats))
-
+        sweep_results.append((mid, stats))
         print(f"  drop={stats['drop_rate']*100:.1f}%  "
-              f"completed={stats['completed']}/{stats['total']}  "
-              f"avg_wait={stats['avg_wait']:.1f}ms")
+            f"completed={stats['completed']}/{stats['total']}  "
+            f"avg_wait={stats['avg_wait']:.1f}ms")
 
-        if recommendation is None and stats["drop_rate"] <= DROP_RATE_TARGET:
-            recommendation = (num_pods, stats)
-            print(f"\n  ★  Target met at {num_pods} pod(s) — stopping sweep.\n")
-            break
+        if stats["drop_rate"] <= DROP_RATE_TARGET:
+            hi = mid        # met target, try fewer
+        else:
+            lo = mid + 1    # didn't meet target, need more
+
+    # Verify the final answer
+    print(f"  [final] Simulating {lo} pod(s)...", end="", flush=True)
+    result_jobs = run_simulation(
+        base_jobs, num_pods=lo, timeout=TIMEOUT_MS,
+        speed=SPEED_MULTIPLIER, verbose=VERBOSE,
+    )
+    stats = compute_stats(result_jobs)
+    sweep_results.append((lo, stats))
+    print(f"  drop={stats['drop_rate']*100:.1f}%  "
+        f"completed={stats['completed']}/{stats['total']}  "
+        f"avg_wait={stats['avg_wait']:.1f}ms")
+
+    if stats["drop_rate"] <= DROP_RATE_TARGET:
+        recommendation = (lo, stats)
+        print(f"\n  ★  Minimum pods to meet target: {lo}\n")
+    else:
+        print(f"\n  ✗  Could not meet target within {MAX_PODS} pods.\n")
+    
 
     # ── Summary table ─────────────────────────────────────────────────────────
     print_sweep_table(sweep_results, DROP_RATE_TARGET)
-
+    
     # ── Final recommendation ──────────────────────────────────────────────────
     if recommendation:
         print_final_report(
