@@ -15,12 +15,12 @@ INTERVAL=5          # Poll interval in seconds
 
 echo "DEBUG: Starting internal submission script." >&2
 
-LOCAL_PORT=5000
+LOCAL_PORT=8888
 MAX_WAIT=10
 TUNNEL_READY=false
 echo "DEBUG: Waiting for tunnel handshake..." >&2
 for _ in $(seq 1 $MAX_WAIT); do
-    # Use native bash TCP ping - no external tools required
+    # Ensure port forward works
     if (echo > /dev/tcp/127.0.0.1/$LOCAL_PORT) >/dev/null 2>&1; then
         TUNNEL_READY=true
         break
@@ -34,7 +34,7 @@ fi
 
 # 1. Find the Go Server Pod IP
 # POD_IP=$(sudo kubectl get pods -n "$NAMESPACE" -l "$POD_LABEL" -o jsonpath="{.items[0].status.podIP}" 2>/dev/null)
-POD_IP="127.0.0.1"
+POD_IP="localhost"
 INTERNAL_URL="http://$POD_IP:$LOCAL_PORT"
 
 if [ -z "$INTERNAL_URL" ]; then
@@ -46,7 +46,6 @@ echo "DEBUG: Go server found at internal IP: $INTERNAL_URL" >&2
 
 # 2. Submit the Job
 echo "DEBUG: Submitting job to Go server at $INTERNAL_URL/submit." >&2
-echo "Timestamp (gradescope -> junkyard, end): $(date +%s%N)" >&2
 SUBMIT_RESP=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
     -F "name=$STUDENT_NAME" \
     -H "Authorization: Bearer $SECRET_TOKEN" \
@@ -54,6 +53,7 @@ SUBMIT_RESP=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
     -F "script=@$ZIP_FILE" \
     "$INTERNAL_URL/submit")
 
+echo "Timestamp (gradescope -> junkyard, end): $(date +%s%N)" >&2
 HTTP_STATUS=$(echo "$SUBMIT_RESP" | tail -n1 | sed -e 's/HTTP_STATUS://')
 BODY_RESP=$(echo "$SUBMIT_RESP" | sed '$d')
 
@@ -75,19 +75,6 @@ if [ -z "$JOB_ID" ]; then
     rm -f "$ZIP_FILE"
     exit 1
 fi
-
-NODE_NAME=""
-TIMEOUT_END=$(( SECONDS + 60 ))
-while [[ $SECONDS -lt $TIMEOUT_END ]]; do
-    NODE_NAME=$(kubectl get pods -n "$NAMESPACE" -l "job-name=$JOB_ID" -o jsonpath="{.items[0].spec.nodeName}" 2>/dev/null || true)
-
-    if [[ ! -z "$NODE_NAME" ]]; then
-        echo "Timestamp (job ${JOB_ID}, node ${NODE_NAME}: pod created): $(date +%s%N)" >&2
-        break
-    fi
-    
-    sleep 0.02
-done
 
 # 3. Poll for Status
 END_TIME=$(( SECONDS + TIMEOUT ))
@@ -141,23 +128,27 @@ RAW_LOGS_DIRTY=$(curl -s "$INTERNAL_URL/logs/$JOB_ID" -H "Authorization: Bearer 
 # Use sed to remove the JSON block and the Metadata block
 CLEAN_LOGS=$(echo "$RAW_LOGS_DIRTY" | sed '/---JSON_START---/,$d' | sed '/---METADATA---/,$d')
 
+NODE_NAME=$(kubectl get pods -n "$NAMESPACE" -l "job-name=$JOB_ID" -o jsonpath="{.items[0].spec.nodeName}" 2>/dev/null || true)
+POD_START=$(kubectl get pods -n "$NAMESPACE" -l "job-name=$JOB_ID" -o jsonpath='{.items[0].status.containerStatuses[0].state.terminated.startedAt}')
+POD_END=$(kubectl get pods -n "$NAMESPACE" -l "job-name=$JOB_ID" -o jsonpath='{.items[0].status.containerStatuses[0].state.terminated.finishedAt}')
+
+TRUE_START_NS=$(date -d "$POD_START" +%s%N)
+TRUE_END_NS=$(date -d "$POD_END" +%s%N)
+
+echo "Timestamp (job ${JOB_ID}, node ${NODE_NAME}: pod created): $TRUE_START_NS" >&2
 if [ "$JOB_STATUS" == "succeeded" ]; then
-    echo "Timestamp (job ${JOB_ID}, node ${NODE_NAME}: output returned, success): $(date +%s%N)" >&2
+    echo "Timestamp (job ${JOB_ID}, node ${NODE_NAME}: output returned, success): $TRUE_END_NS" >&2
     echo "DEBUG: Raw JOB_RESULTS_OUTPUT:" >&2
     echo "$JOB_RESULTS_OUTPUT" >&2
 
     echo "DEBUG: Job succeeded. Formatting final JSON." >&2
     echo "$JOB_RESULTS_OUTPUT" | jq --arg logs "$CLEAN_LOGS" '.output = .output + "\n\n--- EXECUTION LOGS ---\n" + $logs'
 else
-    echo "Timestamp (job ${JOB_ID}, node ${NODE_NAME}: output returned -> failure): $(date +%s%N)" >&2
+    echo "Timestamp (job ${JOB_ID}, node ${NODE_NAME}: output returned, failure): $TRUE_END_NS" >&2
     echo "DEBUG: Job failed. Formatting final error JSON." >&2
     jq -n --arg logs "$CLEAN_LOGS" --arg err "$JOB_SERVER_ERROR" \
         '{score: 0, output: ("Job failed.\nServer Error: " + $err + "\n\n--- LOGS ---\n" + $logs)}'
 fi
-
-echo "DEBUG: Waiting for job to fully complete and release resources..." >&2
-sudo kubectl wait --for=condition=complete "job/$JOB_ID" -n "$NAMESPACE" --timeout="30s" > /dev/null 2>&1 || true
-echo "Timestamp (job ${JOB_ID}, node ${NODE_NAME}: available): $(date +%s%N)" >&2
 
 # Cleanup zip file
 rm -f "$ZIP_FILE"

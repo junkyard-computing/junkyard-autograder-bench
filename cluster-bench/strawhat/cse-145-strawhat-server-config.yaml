@@ -65,8 +65,8 @@ spec:
               value: "/dev/mali0"
             - name: REGISTRY_SECRET_NAME
               value: ""
-            # - name: TARGET_WORKER_NODE
-            # value: "pf-026"
+            - name: TARGET_WORKER_NODES
+              value: "pf-022,pf-025,pf-026,pf-027,pf-028,pf-029"
           ports:
             - containerPort: 5000
           volumeMounts:
@@ -77,7 +77,7 @@ spec:
           kubernetes.io/arch: arm64
           kubernetes.io/hostname: "pf-022"
       imagePullSecrets:
-        - name: my-registry-secret
+      - name: my-secret
       volumes:
         - name: kubeconfig-storage
           hostPath:

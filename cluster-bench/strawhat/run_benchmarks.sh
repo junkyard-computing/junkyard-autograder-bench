@@ -7,13 +7,22 @@ SUBMISSION_SRC_DIR="./opencl"
 SSH_USER="luffy"
 SSH_HOST="132.239.17.60"
 CLUSTER_SCRIPT="/home/$SSH_USER/submit_job.sh"
-STUDENT_NAME="SSH-Runner"
+STUDENT_NAME="redacted"
 ASSIGNMENT_TITLE="PA0"
 
 JUMP_HOST="$SSH_USER@$SSH_HOST"
 MUX_DIR=$(mktemp -d "/tmp/ssh_mux_XXXXXX") || exit 1
-PORT=5000
-NUM_SOCKETS=6
+PORT=8888
+REMOTE_PORT=5000
+
+# Each socket can multiplex up to 10* connections (jobs) by default
+# The true number of connections per socket depends on 'MaxSessions'
+#   inside of .ssh/ssh/sshd_config of jump host
+NUM_SOCKETS=3
+
+pkill -f "ssh -M -S /tmp/.*luffy@132.239.17.60" || true
+
+sleep 0.1
 
 # Create master tunnels
 echo "Establishing SSH ControlMaster tunnels..."
@@ -21,22 +30,39 @@ for s in $(seq 1 $NUM_SOCKETS); do
     ssh -M -S "$MUX_DIR/socket_$s" -f -N "$JUMP_HOST"
 done
 
-sleep 1
+#sleep 1
 
 # Teardown port forward + master tunnel on ./run_benchmark exit
-trap 'echo "Cleaning up SSH and remote processes..."; \
-    ssh -S "$MUX_DIR/socket_1" "$JUMP_HOST" "pkill -f \"kubectl port-forward\" || true"; \
+trap 'set +e; \
+    echo "Cleaning up SSH and remote processes..."; \
+    ssh -S "$MUX_DIR/socket_1" "$JUMP_HOST" "pkill -f \"kubectl port-forward\" || true; \
+    sudo ss -lptn \"sport = :8888\" | \
+    awk \"
+    match($0, /pid=([0-9]+)/, m) && !p {
+        p = m[1]
+    } 
+    END {
+        if (p) {print p}
+    }\" | xargs kill || true"; \
     for s in $(seq 1 '$NUM_SOCKETS'); do ssh -S "$MUX_DIR/socket_$s" -O exit "$JUMP_HOST" 2>/dev/null || true; done; \
     rm -rf "$MUX_DIR"' EXIT
 
 echo "Clearing old remote port-forwards..."
-ssh -S "$MUX_DIR/socket_1" "$JUMP_HOST" "pkill -f 'kubectl port-forward' || true" || true
+ssh -S "$MUX_DIR/socket_1" "$JUMP_HOST" "pkill -f 'kubectl port-forward' || true; \
+    sudo ss -lptn 'sport = :8888' | \
+    awk '
+    match($0, /pid=([0-9]+)/, m) && !p {
+        p = m[1]
+    } 
+    END {
+        if (p) {print p}
+    }' | xargs kill " || true
 
 sleep 2
 
 echo "Starting new remote port-forward..."
 ssh -S "$MUX_DIR/socket_1" "$JUMP_HOST" \
-    "export KUBECONFIG=/home/luffy/cluster-b.kubeconfig && nohup kubectl port-forward deployment/job-server $PORT:$PORT >/dev/null 2>&1 &" || true
+    "export KUBECONFIG=/home/luffy/cluster-b.kubeconfig && nohup kubectl port-forward deployment/job-server $PORT:$REMOTE_PORT </dev/null >/dev/null 2>&1 &" || true
 sleep 3
 
 if [ ! -f "secret_token" ]; then
@@ -49,11 +75,14 @@ SECRET_TOKEN=$(cat secret_token)
 TIMES=(1000000 2000000 4000000 8000000 16000000 32000000 64000000 124000000)
 ITERATIONS=(1 2 4 8 16 32 64)
 
-RUN_DIR="benchmark_run_$(date +%Y%m%d_%H%M%S)"
+TOTAL_JOBS=${1:-0}
+NUM_NODES=${2:-0}
+
+RUN_DIR="benchmark_run_${TOTAL_JOBS}_${NUM_NODES}_$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$RUN_DIR"
 echo "Output for this run will be saved to: $RUN_DIR"
 
-USED_TIMES=("${TIMES[@]:0:3}")
+USED_TIMES=("${TIMES[@]:1:1}")
 echo "Running workload with these times (μs): (${USED_TIMES[*]})"
 
 echo "Creating base payload..."
@@ -62,13 +91,11 @@ pushd "$SUBMISSION_SRC_DIR" > /dev/null
 zip -qr "$BASE_ZIP" .
 popd > /dev/null
 
-JOB_COUNT=0
-for ((i = 1; i <= ITERATIONS[4]; i++)) do
+for ((i = 1; i <= TOTAL_JOBS; i++)) do
     for TIME_VAL in "${USED_TIMES[@]}"; do
-        SOCKET_NUM=$(( (JOB_COUNT % NUM_SOCKETS) + 1))
+        SOCKET_NUM=$(( ((i - 1) % NUM_SOCKETS) + 1))
         CURRENT_SOCKET="$MUX_DIR/socket_$SOCKET_NUM"
 
-        JOB_COUNT=$((JOB_COUNT + 1))
         (
             RUN_LOG="$RUN_DIR/${TIME_VAL}_${i}.log"
             echo "Output for this job will be saved to: $RUN_LOG"
@@ -76,12 +103,12 @@ for ((i = 1; i <= ITERATIONS[4]; i++)) do
             echo "Timestamp (gradescope start): $(date +%s%N)" | tee -a "$RUN_LOG"
             echo "========================================" | tee -a "$RUN_LOG"
             echo "Preparing job for Time: $TIME_VAL µs" | tee -a "$RUN_LOG"
-            
+
             # 1. Create a fresh temporary directory for zipping
             TEMP_ZIP_DIR="/tmp/autograder_payload_${i}_${TIME_VAL}"
             rm -rf "$TEMP_ZIP_DIR"
             mkdir -p "$TEMP_ZIP_DIR"
-            
+
             # 2. Dynamically generate the benchmark.sh script
             cat <<EOF > "$TEMP_ZIP_DIR/benchmark.sh"
 #!/bin/bash
