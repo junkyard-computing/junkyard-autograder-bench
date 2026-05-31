@@ -22,7 +22,7 @@ def process_benchmark_timestamps(directory_path, output_excel):
 
     for file_path in file_paths:
         filename = os.path.basename(file_path)
-        
+
         m_file = re.match(r'(\d+)_(\d+)\.txt', filename)
         if not m_file:
             print(f"Warning: Skipping '{filename}' because the filename doesn't match the expected format (e.g., 1000000_1.txt)")
@@ -50,7 +50,7 @@ def process_benchmark_timestamps(directory_path, output_excel):
             if not gy_end_match: missing.append("junkyard end")
             if not pod_created_match: missing.append("pod created")
             if not out_ret_match: missing.append("output returned")
-            
+
             print(f"Warning: Skipping '{filename}'. Missing timestamps for: {', '.join(missing)}")
             continue
 
@@ -90,14 +90,14 @@ def process_benchmark_timestamps(directory_path, output_excel):
         return
 
     df = pd.DataFrame(data)
-    
+
     # Sort primarily by node, then by pod creation time to establish chronological order
     df = df.sort_values(['Node', 'pod created']).reset_index(drop=True)
 
     # Calculate average spinup latency using the FIRST JOB on each node
     first_jobs_idx = df.groupby('Node')['pod created'].idxmin()
     first_jobs = df.loc[first_jobs_idx]
-    
+
     # Baseline spinup = (Pod Created) - (Junkyard End) for the very first job on a node
     avg_spinup_latency = (first_jobs['pod created'] - first_jobs['gy_end']).mean()
     print(f"\nCalculated Average Spinup Latency (First-Job Baseline): {avg_spinup_latency:.2f} ns")
@@ -107,14 +107,14 @@ def process_benchmark_timestamps(directory_path, output_excel):
 
     for node in df['Node'].unique():
         node_indices = df[df['Node'] == node].index
-        
+
         for i in range(len(node_indices) - 1):
             curr_idx = node_indices[i]
             next_idx = node_indices[i + 1]
-            
+
             # Gap: Next job's start minus current job's end
             gap = df.loc[next_idx, 'pod created'] - df.loc[curr_idx, 'out_ret']
-            
+
             # Subtract baseline spinup latency, cap at 0 to prevent negative chart rendering
             avail_time = max(0, gap - avg_spinup_latency)
             df.loc[curr_idx, 'node waiting for availability'] = avail_time
@@ -145,13 +145,13 @@ def process_benchmark_timestamps(directory_path, output_excel):
     # --- Excel and Chart Generation using XlsxWriter ---
     with pd.ExcelWriter(output_excel, engine='xlsxwriter') as writer:
         final_df.to_excel(writer, index=False, sheet_name='Timestamps')
-        
+
         workbook = writer.book
         worksheet = writer.sheets['Timestamps']
-        
+
         chart = workbook.add_chart({'type': 'bar', 'subtype': 'stacked'})
         max_row = len(final_df)
-        
+
         # Series 0: Invisible Offset
         chart.add_series({
             'name':       ['Timestamps', 0, 2],
@@ -171,7 +171,7 @@ def process_benchmark_timestamps(directory_path, output_excel):
         }
 
         visible_columns = [3, 4, 5, 7, 8, 10]
-        
+
         for col in visible_columns:
             chart.add_series({
                 'name':       ['Timestamps', 0, col],
@@ -182,28 +182,31 @@ def process_benchmark_timestamps(directory_path, output_excel):
             })
 
         unique_nodes = len(df['Node'].unique())
-        
+
         chart.set_title({
             'name': f'{len(final_df)} jobs running across {unique_nodes} nodes',
             'name_font': {'size': 20}
         })
-        
+
         chart.set_x_axis({
             'name': 'Time (nanoseconds)', 
             'major_gridlines': {'visible': True},
             'name_font': {'size': 20},
             'num_font':  {'size': 18}
         })
-        
+
         chart.set_y_axis({
             'name': 'Node',
             'reverse': True,
             'name_font': {'size': 20},
-            'num_font':  {'size': 14}
+            'num_font':  {'size': 14},
+            'interval_unit': 1
         })
-        
-        chart.set_size({'width': 1600, 'height': 900})
-        
+
+        dynamic_height = max(900, len(final_df) * 25)
+
+        chart.set_size({'width': 1600, 'height': dynamic_height})
+
         chart.set_legend({
             'position': 'bottom',
             'delete_series': [0],
@@ -220,5 +223,5 @@ if __name__ == "__main__":
     parser.add_argument("directory", help="Path to the directory containing the benchmark .txt files")
     parser.add_argument("-o", "--output", default="benchmark_results.xlsx", help="Output Excel file name")
     args = parser.parse_args()
-    
+
     process_benchmark_timestamps(args.directory, args.output)
