@@ -1,0 +1,37 @@
+Timestamp (gradescope start): 1780186785603249872
+========================================
+Preparing job for Time: 4000000 µs
+Transferring payload to cluster...
+Timestamp (gradescope -> junkyard, start): 1780186785952859178
+DEBUG: Starting internal submission script.
+DEBUG: Waiting for tunnel handshake...
+DEBUG: Go server found at internal IP: http://localhost:8888
+DEBUG: Submitting job to Go server at http://localhost:8888/submit.
+Timestamp (gradescope -> junkyard, end): 1780186786482564276
+DEBUG: Submit HTTP Status: 202
+DEBUG: Parsed JOB_ID: '9c0351ef-a1f4-43e4-9da2-9ee868fdca3f'. Polling for results...
+DEBUG: Polling URL: http://localhost:8888/status/9c0351ef-a1f4-43e4-9da2-9ee868fdca3f (Time remaining: 300s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://localhost:8888/status/9c0351ef-a1f4-43e4-9da2-9ee868fdca3f (Time remaining: 295s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://localhost:8888/status/9c0351ef-a1f4-43e4-9da2-9ee868fdca3f (Time remaining: 290s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://localhost:8888/status/9c0351ef-a1f4-43e4-9da2-9ee868fdca3f (Time remaining: 285s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://localhost:8888/status/9c0351ef-a1f4-43e4-9da2-9ee868fdca3f (Time remaining: 280s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://localhost:8888/status/9c0351ef-a1f4-43e4-9da2-9ee868fdca3f (Time remaining: 275s)
+DEBUG: Current Job Status: succeeded
+DEBUG: Job 9c0351ef-a1f4-43e4-9da2-9ee868fdca3f completed. Fetching raw logs...
+{
+  "score": 100,
+  "output": "Compiling...\ncd helper_lib; make\nmake[1]: Entering directory '/autograder/submission/helper_lib'\ngcc -g -Wall -c -o device.o device.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o kernel.o kernel.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o matrix.o matrix.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o img.o img.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\nar rcs helper_lib.a device.o kernel.o matrix.o img.o\nmake[1]: Leaving directory '/autograder/submission/helper_lib'\ngcc -g -Wall -o solution helper_lib/helper_lib.a main.c -I helper_lib -I/usr/local/cuda/include helper_lib/helper_lib.a -lm -L/usr/local/cuda/lib64 -lOpenCL\nRunning solution with time: 4000000\n==============Starting Work==============\nRunning on:\n\tPlatform: ARM Platform\n\tDevice: Mali-G710 r0p0\n\nCalls: 59\nElapsed: 4065797.242 us\nTotal FLOPs: 1.014e+12\nPerformance: 249.30 GFLOPS (FP32)\n===============End of Work===============\n\n\n--- EXECUTION LOGS ---\nStarting autograder from /autograder/source...\nExecuting benchmark inside /autograder/submission..."
+}
+Timestamp (job 9c0351ef-a1f4-43e4-9da2-9ee868fdca3f, node pf-027: pod created): 1780186792000000000
+Timestamp (job 9c0351ef-a1f4-43e4-9da2-9ee868fdca3f, node pf-027: output returned, success): 1780186797000000000
+DEBUG: Raw JOB_RESULTS_OUTPUT:
+{
+    "score": 100,
+    "output": "Compiling...\ncd helper_lib; make\nmake[1]: Entering directory '/autograder/submission/helper_lib'\ngcc -g -Wall -c -o device.o device.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o kernel.o kernel.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o matrix.o matrix.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o img.o img.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\nar rcs helper_lib.a device.o kernel.o matrix.o img.o\nmake[1]: Leaving directory '/autograder/submission/helper_lib'\ngcc -g -Wall -o solution helper_lib/helper_lib.a main.c -I helper_lib -I/usr/local/cuda/include helper_lib/helper_lib.a -lm -L/usr/local/cuda/lib64 -lOpenCL\nRunning solution with time: 4000000\n==============Starting Work==============\nRunning on:\n\tPlatform: ARM Platform\n\tDevice: Mali-G710 r0p0\n\nCalls: 59\nElapsed: 4065797.242 us\nTotal FLOPs: 1.014e+12\nPerformance: 249.30 GFLOPS (FP32)\n===============End of Work===============\n"
+}
+DEBUG: Job succeeded. Formatting final JSON.

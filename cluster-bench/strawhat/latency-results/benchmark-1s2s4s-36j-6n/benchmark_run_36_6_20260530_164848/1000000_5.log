@@ -1,0 +1,41 @@
+Timestamp (gradescope start): 1780184928354110403
+========================================
+Preparing job for Time: 1000000 µs
+Transferring payload to cluster...
+Timestamp (gradescope -> junkyard, start): 1780184928684637448
+DEBUG: Starting internal submission script.
+DEBUG: Waiting for tunnel handshake...
+DEBUG: Go server found at internal IP: http://localhost:8888
+DEBUG: Submitting job to Go server at http://localhost:8888/submit.
+Timestamp (gradescope -> junkyard, end): 1780184931907542897
+DEBUG: Submit HTTP Status: 202
+DEBUG: Parsed JOB_ID: 'ab22a649-3c42-4b90-8a6f-e461eb5a3619'. Polling for results...
+DEBUG: Polling URL: http://localhost:8888/status/ab22a649-3c42-4b90-8a6f-e461eb5a3619 (Time remaining: 300s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://localhost:8888/status/ab22a649-3c42-4b90-8a6f-e461eb5a3619 (Time remaining: 295s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://localhost:8888/status/ab22a649-3c42-4b90-8a6f-e461eb5a3619 (Time remaining: 290s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://localhost:8888/status/ab22a649-3c42-4b90-8a6f-e461eb5a3619 (Time remaining: 284s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://localhost:8888/status/ab22a649-3c42-4b90-8a6f-e461eb5a3619 (Time remaining: 279s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://localhost:8888/status/ab22a649-3c42-4b90-8a6f-e461eb5a3619 (Time remaining: 274s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://localhost:8888/status/ab22a649-3c42-4b90-8a6f-e461eb5a3619 (Time remaining: 269s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://localhost:8888/status/ab22a649-3c42-4b90-8a6f-e461eb5a3619 (Time remaining: 264s)
+DEBUG: Current Job Status: succeeded
+DEBUG: Job ab22a649-3c42-4b90-8a6f-e461eb5a3619 completed. Fetching raw logs...
+Timestamp (job ab22a649-3c42-4b90-8a6f-e461eb5a3619, node pf-025: pod created): 1780184958000000000
+Timestamp (job ab22a649-3c42-4b90-8a6f-e461eb5a3619, node pf-025: output returned, success): 1780184960000000000
+DEBUG: Raw JOB_RESULTS_OUTPUT:
+{
+    "score": 100,
+    "output": "Compiling...\ncd helper_lib; make\nmake[1]: Entering directory '/autograder/submission/helper_lib'\ngcc -g -Wall -c -o device.o device.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o kernel.o kernel.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o matrix.o matrix.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o img.o img.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\nar rcs helper_lib.a device.o kernel.o matrix.o img.o\nmake[1]: Leaving directory '/autograder/submission/helper_lib'\ngcc -g -Wall -o solution helper_lib/helper_lib.a main.c -I helper_lib -I/usr/local/cuda/include helper_lib/helper_lib.a -lm -L/usr/local/cuda/lib64 -lOpenCL\nRunning solution with time: 1000000\n==============Starting Work==============\nRunning on:\n\tPlatform: ARM Platform\n\tDevice: Mali-G710 r0p0\n\nCalls: 15\nElapsed: 1043416.347 us\nTotal FLOPs: 2.577e+11\nPerformance: 246.98 GFLOPS (FP32)\n===============End of Work===============\n"
+}
+DEBUG: Job succeeded. Formatting final JSON.
+{
+  "score": 100,
+  "output": "Compiling...\ncd helper_lib; make\nmake[1]: Entering directory '/autograder/submission/helper_lib'\ngcc -g -Wall -c -o device.o device.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o kernel.o kernel.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o matrix.o matrix.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o img.o img.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\nar rcs helper_lib.a device.o kernel.o matrix.o img.o\nmake[1]: Leaving directory '/autograder/submission/helper_lib'\ngcc -g -Wall -o solution helper_lib/helper_lib.a main.c -I helper_lib -I/usr/local/cuda/include helper_lib/helper_lib.a -lm -L/usr/local/cuda/lib64 -lOpenCL\nRunning solution with time: 1000000\n==============Starting Work==============\nRunning on:\n\tPlatform: ARM Platform\n\tDevice: Mali-G710 r0p0\n\nCalls: 15\nElapsed: 1043416.347 us\nTotal FLOPs: 2.577e+11\nPerformance: 246.98 GFLOPS (FP32)\n===============End of Work===============\n\n\n--- EXECUTION LOGS ---\nStarting autograder from /autograder/source...\nExecuting benchmark inside /autograder/submission..."
+}
