@@ -2,7 +2,7 @@
 set -e
 
 # Configuration
-SUBMISSION_SRC_DIR="./opencl"
+SUBMISSION_SRC_DIR="../opencl"
 
 SSH_USER="luffy"
 SSH_HOST="132.239.17.60"
@@ -73,16 +73,17 @@ SECRET_TOKEN=$(cat secret_token)
 
 # Times in microseconds to test
 TIMES=(1000000 2000000 4000000 8000000 16000000 32000000 64000000 124000000)
-ITERATIONS=(1 2 4 8 16 32 64)
 
-TOTAL_JOBS=${1:-0}
+USED_TIMES=("${TIMES[@]:0:3}")
+NUM_ITERATIONS=${1:-0}
+TOTAL_JOBS=$(( NUM_ITERATIONS * ${#USED_TIMES[@]} ))
+
 NUM_NODES=${2:-0}
 
 RUN_DIR="benchmark_run_${TOTAL_JOBS}_${NUM_NODES}_$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$RUN_DIR"
-echo "Output for this run will be saved to: $RUN_DIR"
 
-USED_TIMES=("${TIMES[@]:1:1}")
+echo "Output for this run will be saved to: $RUN_DIR"
 echo "Running workload with these times (μs): (${USED_TIMES[*]})"
 
 echo "Creating base payload..."
@@ -91,7 +92,7 @@ pushd "$SUBMISSION_SRC_DIR" > /dev/null
 zip -qr "$BASE_ZIP" .
 popd > /dev/null
 
-for ((i = 1; i <= TOTAL_JOBS; i++)) do
+for ((i = 1; i <= NUM_ITERATIONS; i++)) do
     for TIME_VAL in "${USED_TIMES[@]}"; do
         SOCKET_NUM=$(( ((i - 1) % NUM_SOCKETS) + 1))
         CURRENT_SOCKET="$MUX_DIR/socket_$SOCKET_NUM"

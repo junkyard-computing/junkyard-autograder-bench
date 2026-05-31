@@ -14,8 +14,11 @@ kubectl apply -f cse-145-<cluster>-server-config.yml
 
 ## Run the benchmark
 
-Simply call ./run_benchmark <NUM_JOBS> <NUM_NODES> or edit
-the script to change desired benchmarking times
+Simply call ./run_benchmark <NUM_ITERATIONS> <NUM_NODES> or edit
+the script to change desired number of jobs/workload times
+
+NUM_ITERATIONS controls how many iterations of the USED_TIMES
+array (once per time inside the array) we run the benchmark on
 
 NUM_NODES doesn't actually change the number of nodes used,
 but changes the output directory name
