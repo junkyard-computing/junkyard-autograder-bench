@@ -9,6 +9,7 @@ standardized execution environment. A cluster of repurposed smartphones can prov
 profiles, and their ubiquity means institutions can source them at little to no cost. Rather than competing for shared high-performance resources, students would submit to a dedicated phone cluster optimized specifically for lightweight, reproducible execution. This project investigates two core questions. First, how many 
 phones are needed to serve a class of n students without meaningful queuing delays? Second, what is the throughput ceiling of a phone cluster, measured in submissions per unit time, before the system degrades under load?
 
+# File Structure
 ```
 junkyard-autograder-bench/
 ├── cluster-bench/               # Scripts and configs for benchmarking the phone cluster
