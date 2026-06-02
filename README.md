@@ -27,6 +27,10 @@ junkyard-autograder-bench/
 └── README.md
 ```
 
+## Wiki
+
+See the [Wiki Tab](https://github.com/junkyard-computing/junkyard-autograder-bench/wiki) for detailed instructions
+
 ## Workflow:
 
-![workflow](project-spec/images/workflow.png)
+![workflow](project-spec/images/workflow_updated.png)
