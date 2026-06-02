@@ -9,6 +9,24 @@ standardized execution environment. A cluster of repurposed smartphones can prov
 profiles, and their ubiquity means institutions can source them at little to no cost. Rather than competing for shared high-performance resources, students would submit to a dedicated phone cluster optimized specifically for lightweight, reproducible execution. This project investigates two core questions. First, how many 
 phones are needed to serve a class of n students without meaningful queuing delays? Second, what is the throughput ceiling of a phone cluster, measured in submissions per unit time, before the system degrades under load?
 
+# File Structure
+```
+junkyard-autograder-bench/
+├── cluster-bench/               # Scripts and configs for benchmarking the phone cluster
+│   ├── opencl/                  # OpenCL workload used in benchmarks
+│   ├── qcluster/                # Qualcomm cluster deployment config
+│   └── strawhat/                # Strawhat cluster deployment, submission scripts, and results
+├── opencl-throughput-bench/     # Standalone OpenCL throughput benchmark
+│   └── helper_lib/              # Shared OpenCL utility library
+├── project-spec/                # Project specification, LaTeX writeup, and workflow diagrams
+├── simulation/                  # Queueing simulation and synthetic submission data
+├── submission-model/            # Pipeline for modeling and generating synthetic submissions
+│   ├── cse160-data/             # Real CSE 160 data: filtered CSVs, GMM scripts, figures
+│   ├── id-assigner/             # Rust CLI: anonymize students with sequential IDs
+│   └── interactive-dev-sessions/ # Rust CLI: infer dev sessions from submission timestamps
+└── README.md
+```
+
 ## Workflow:
 
 ![workflow](project-spec/images/workflow.png)

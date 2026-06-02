@@ -1,3 +1,31 @@
+# File Structure
+
+```
+cluster-bench/
+├── opencl/                          # OpenCL workload submitted as the benchmark job
+│   ├── main.c                       # Entry point; runs matrix multiply for a given duration
+│   ├── workload.cl                  # OpenCL kernel
+│   ├── helper_lib/                  # Shared OpenCL utility library (device, kernel, matrix, img)
+│   └── Makefile
+├── qcluster/                        # Qualcomm cluster config
+│   ├── Dockerfile                   # Container image for the qcluster autograder worker
+│   └── cse-145-qcomm-server-config.yaml
+├── strawhat/                        # Strawhat cluster config, benchmark scripts, and results
+│   ├── Dockerfile                   # Container image for the strawhat autograder worker
+│   ├── cse-145-strawhat-server-config.yaml
+│   ├── run_benchmarks.sh            # Main benchmark driver: SSHes to jump host, submits jobs in parallel
+│   ├── submit_job.sh                # Runs on the jump host: forwards zip to job server, polls for result
+│   ├── extract_timestamps.sh        # Pulls nanosecond timestamps out of raw benchmark logs
+│   ├── convert_to_relative_timestamps.sh # Converts absolute ns timestamps to relative offsets
+│   ├── extract_latencies.py         # Parses log files and reports average latency breakdown
+│   ├── rel_timestamps_to_excel.py   # Exports relative timestamps to Excel for analysis
+│   ├── secret_token.example         # Template for the bearer token used to authenticate job submissions
+│   ├── latency-results/             # Raw log files from latency benchmark runs
+│   └── throughput-results/          # Raw log files from throughput benchmark runs
+├── monitor_phone.sh                 # Live dashboard: GPU freq/util, CPU load, and temps on the phone
+└── run_native_benchmarks.sh         # Runs the OpenCL workload locally N times and reports GFLOPS
+```
+
 # Instructions to Benchmark
 
 ## Junkyard Autograder
