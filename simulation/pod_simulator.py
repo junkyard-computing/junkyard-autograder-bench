@@ -45,6 +45,8 @@ from typing import Optional
 
 SUBMISSIONS_CSV = "pa8_hours_pa8_runtime_n1101_synthetic.csv"
 SESSIONS_CSV    = "../submission-model/interactive-dev-sessions/sessions.csv"
+SESSION_START = "2026-03-09T15:26:49.338103-07:00"
+SUBMISSION_START = "2026-03-09T18:21:14.338103-07:00"
 
 MAX_PODS = 200   # Sweep upper bound
 
@@ -54,8 +56,8 @@ BATCH_TIMEOUT_MS  = 300000    # Job dropped if it waits longer than this in queu
 
 # ── Interactive sessions ──────────────────────────────────────────────────────
 MAX_SESSION_HOURS       = 6        # Session evicted after this; remainder re-queued
-SESSION_WAIT_TARGET_MS  = 600_000  # p95 session queue wait must be ≤ this (ms)
-SESSION_WAIT_PERCENTILE = 95       # percentile used for the wait target
+SESSION_WAIT_TARGET_MS  = 100000  # p95 session queue wait must be ≤ this (ms)
+SESSION_WAIT_PERCENTILE = 99       # percentile used for the wait target
 
 # ── Overhead (ms) ─────────────────────────────────────────────────────────────
 GRADESCOPE_OVERHEAD_MS = 24_373.76  # Gradescope + Junkyard + Waiting-for-scheduler
@@ -243,33 +245,28 @@ def load_sessions(path: str) -> list[Session]:
 
 def _align_timelines(jobs: list[BatchJob], sessions: list[Session]):
     """
-    Place both workloads on a shared timeline.
-
-    Sessions have absolute epoch ms timestamps.
-    Jobs have relative ms (hours_since_first).
-
-    Strategy:
-      1. Re-zero sessions so the first session is at t=0.
-      2. The job timeline already starts at 0 (hours_since_first=0 is the
-         first submission).  We treat those two t=0 points as coincident —
-         i.e. we assume the first submission and the first session start at
-         roughly the same time.  If your data has a known offset between
-         them, add it as JOB_START_OFFSET_MS below.
-
-    If you know the exact wall-clock time of the first submission, set
-    JOB_START_OFFSET_MS to (first_submission_epoch_ms - first_session_epoch_ms).
+    Sessions: absolute ISO-8601 timestamps → zero to first session.
+    Jobs:     hours_since_first (float) → already relative, just need
+              to shift by the real gap between first session and first submission.
     """
-    JOB_START_OFFSET_MS = 0   # ← adjust if first submission ≠ first session
-
-    # Re-zero sessions
+    # ── 1. Zero sessions to first session (the earlier anchor) ──
     session_t0 = min(s.arrival_time for s in sessions)
     for s in sessions:
         s.arrival_time -= session_t0
 
-    # Place jobs on the same axis (relative ms + offset)
+    # ── 2. Compute offset: where does t=0 (first submission) fall
+    #       on the session timeline? ──────────────────────────────
+    FIRST_SUBMISSION_EPOCH_MS = _parse_iso(SUBMISSION_START)
+    FIRST_SESSION_EPOCH_MS    = _parse_iso(SESSION_START)
+    JOB_START_OFFSET_MS       = FIRST_SUBMISSION_EPOCH_MS - FIRST_SESSION_EPOCH_MS
+    # → ~10_465_000 ms (jobs start ~2.9h into the session timeline)
+
+    # ── 3. Place jobs on session timeline ───────────────────────
+    # submission_time is already hours_since_first in ms (via _parse_hours),
+    # so just add the offset to shift onto the session axis
     for j in jobs:
         j.submission_time = j.submission_time + JOB_START_OFFSET_MS
-        j.arrival_time    = j.submission_time   # overhead applied later
+        j.arrival_time    = j.submission_time  # overhead applied later
 
 
 def apply_batch_overhead(jobs: list[BatchJob], overhead_ms: float,
@@ -550,6 +547,11 @@ def compute_session_stats(slices: list[Session]) -> dict:
         "p_wait":        _pct(wait_times_sorted, SESSION_WAIT_PERCENTILE),
         "total_slices":  total_slices,
         "capped_slices": capped_slices,
+        "p50_wait": _pct(wait_times_sorted, 50),
+        "p75_wait": _pct(wait_times_sorted, 75),
+        "p90_wait": _pct(wait_times_sorted, 90),
+        "p95_wait": _pct(wait_times_sorted, 95),
+        "p99_wait": _pct(wait_times_sorted, 99),
     }
 
 
@@ -612,6 +614,12 @@ def print_final_report(num_pods: int, b: dict, s: dict, overhead_ms: float):
           f"({s['capped_slices']} continuation slices)")
     print(f"  Avg initial wait    : {s['avg_wait']:.2f}ms")
     print(f"  Max initial wait    : {s['max_wait']:.2f}ms")
+    print(f"  Wait percentiles    : "
+      f"p50={s['p50_wait']/1000:.1f}s  "
+      f"p75={s['p75_wait']/1000:.1f}s  "
+      f"p90={s['p90_wait']/1000:.1f}s  "
+      f"p95={s['p95_wait']/1000:.1f}s  "
+      f"p99={s['p99_wait']/1000:.1f}s")
     print(f"{'='*70}\n")
 
 
