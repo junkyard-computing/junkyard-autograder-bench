@@ -35,7 +35,7 @@ The program is designed to stress-test OpenCL devices and provide a baseline for
 
 ---
 
-## 📋 Requirements
+## Requirements
 
 To run this program, you'll need:
 
