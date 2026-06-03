@@ -12,18 +12,19 @@ phones are needed to serve a class of n students without meaningful queuing dela
 # File Structure
 ```
 junkyard-autograder-bench/
-├── cluster-bench/               # Scripts and configs for benchmarking the phone cluster
-│   ├── opencl/                  # OpenCL workload used in benchmarks
-│   ├── qcluster/                # Qualcomm cluster deployment config
-│   └── strawhat/                # Strawhat cluster deployment, submission scripts, and results
-├── opencl-throughput-bench/     # Standalone OpenCL throughput benchmark
-│   └── helper_lib/              # Shared OpenCL utility library
-├── project-spec/                # Project specification, LaTeX writeup, and workflow diagrams
-├── simulation/                  # Queueing simulation and synthetic submission data
-├── submission-model/            # Pipeline for modeling and generating synthetic submissions
-│   ├── cse160-data/             # Real CSE 160 data: filtered CSVs, GMM scripts, figures
-│   ├── id-assigner/             # Rust CLI: anonymize students with sequential IDs
-│   └── interactive-dev-sessions/ # Rust CLI: infer dev sessions from submission timestamps
+├── cluster-bench/                # Scripts and configs for benchmarking the phone cluster
+│   ├── opencl/                   # OpenCL workload used in benchmarks
+│   ├── qcluster/                 # Qualcomm cluster deployment config
+│   └── strawhat/                 # Strawhat cluster deployment, submission scripts, and results
+├── opencl-throughput-bench/      # Standalone practical OpenCL throughput benchmark to simulate student runs
+|   ├──.devcontainer/             # Configs for containerized OpenCL enviorments on different platforms
+│   └── helper_lib/               # Shared OpenCL utility library
+├── project-spec/                 # Project specification, LaTeX writeup, and workflow diagrams
+├── simulation/                   # Queueing simulator
+├── submission-model/             # Pipeline for modeling and generating synthetic submissions
+│   ├── cse160-data/              # Real CSE 160 data: filtered CSVs, GMM scripts, figures
+│   ├── id-assigner/              # Rust CLI: assigns anonymized students with mock student IDs
+│   └── interactive-dev-sessions/ # Rust CLI: infer interactive dev sessions from historic student submissions
 └── README.md
 ```
 
