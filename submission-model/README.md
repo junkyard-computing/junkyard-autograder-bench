@@ -28,8 +28,8 @@ submission-model/
 │   ├── PA_runtime_analysis.py          # GMM over autograder runtimes (log-space)
 │   ├── pa_gmm.py                       # 2D GMM (time × runtime), 3D surface plot
 │   └── pa_sample_generator.py          # Generates synthetic submission CSVs
-├── id-assigner/                 # Rust CLI: assigns anonymous student IDs
-├── interactive-dev-sessions/    # Rust CLI: converts submissions → session bursts
+├── id-assigner/                 # Rust CLI: assigns anonymized students with mock student IDs
+├── interactive-dev-sessions/    # Rust CLI: infer dev sessions from historic student submissions
 └── synthetic-data/              # See Google Drive (linked in README there)
 ```
 
