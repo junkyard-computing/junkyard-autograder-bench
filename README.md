@@ -27,9 +27,9 @@ junkyard-autograder-bench/
 └── README.md
 ```
 
-## Wiki
+## Instructions
 
-See the [Wiki Tab](https://github.com/junkyard-computing/junkyard-autograder-bench/wiki) for detailed instructions
+Refer to the README files in each directory for their instructions, for a comprehensive page of instructions, see the [Wiki Tab](https://github.com/junkyard-computing/junkyard-autograder-bench/wiki) for details
 
 ## Workflow:
 
