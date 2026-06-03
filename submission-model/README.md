@@ -4,12 +4,13 @@ Tools and data for modeling autograder submission behavior in CSE 160, used to g
 
 ## Overview
 
-The pipeline has four stages:
+The pipeline has Five stages (one requires data per student):
 
 1. **Export** — scrape raw submission history from Gradescope
-2. **Filter / assign IDs** — strip PII and assign anonymous student IDs
+2. **Filter / assign IDs** — strip PII and assign anonymous student IDs (requires data per student)
 3. **Analyze** — fit Gaussian Mixture Models to submission timing and runtime distributions
 4. **Synthesize** — generate synthetic submissions and infer interactive dev sessions from them
+5. **Dev Sessions** — generates inferred student development sessions from historical data (requires data per student)
 
 ---
 
@@ -50,7 +51,9 @@ python gs_history_export.py <email> <course_id> <assignment_id> <out.csv>
 
 ---
 
-## Stage 2 — Assign anonymous IDs
+## Stage 2 — Filter and assign anonymous IDs
+
+**Please make sure to filter studnet data first in compliance with the Family Educational Rights and Privacy Act**
 
 `id-assigner` is a Rust CLI that replaces student identity with a sequential integer ID. It relies on the Gradescope scraper grouping each student's submissions together consecutively.
 
@@ -59,6 +62,8 @@ cargo run --package id-assigner --bin id-assigner -- <input.csv> <output.csv>
 ```
 
 **Output columns:** `student_id`, `attempt_number`, `submission_time`, `runtime_ms`, `score`
+
+Note that this only works for this specific project because the gradescope scraper is set up this way
 
 ---
 
@@ -132,6 +137,14 @@ cargo run -- --input submissions.csv --output sessions.csv --pre-hours 3 --burst
 **Output columns:** `timestamp`, `length_seconds`, `student_id`
 
 > Repeated runs produce slightly different session boundaries because session offsets are sampled stochastically.
+
+---
+
+## Stage 5 — Generate synthetic data
+
+Generates inferred student interactive development sessions on cluster. This step requires mock student ID and submission data per student.
+
+For details, see [README](interactive-dev-sessions/README.md)
 
 ---
 
