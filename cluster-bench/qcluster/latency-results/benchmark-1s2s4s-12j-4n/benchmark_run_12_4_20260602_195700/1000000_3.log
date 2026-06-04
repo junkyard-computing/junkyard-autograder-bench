@@ -1,0 +1,38 @@
+Timestamp (gradescope start): 1780455420402187138
+========================================
+Preparing job for Time: 1000000 µs
+Transferring payload to cluster...
+Timestamp (gradescope -> qcluster, start): 1780455421148296932
+DEBUG: Starting internal submission script.
+DEBUG: Go server found at internal IP: http://10.1.145.190:5000
+DEBUG: Submitting job to Go server at http://10.1.145.190:5000/submit.
+Timestamp (gradescope -> qcluster, end): 1780455422790786236
+DEBUG: Submit HTTP Status: 202
+DEBUG: Parsed JOB_ID: '352c1fca-a585-4d70-a21b-c4b2cbbb93b3'. Polling for results...
+DEBUG: Polling URL: http://10.1.145.190:5000/status/352c1fca-a585-4d70-a21b-c4b2cbbb93b3 (Time remaining: 300s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://10.1.145.190:5000/status/352c1fca-a585-4d70-a21b-c4b2cbbb93b3 (Time remaining: 295s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://10.1.145.190:5000/status/352c1fca-a585-4d70-a21b-c4b2cbbb93b3 (Time remaining: 290s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://10.1.145.190:5000/status/352c1fca-a585-4d70-a21b-c4b2cbbb93b3 (Time remaining: 285s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://10.1.145.190:5000/status/352c1fca-a585-4d70-a21b-c4b2cbbb93b3 (Time remaining: 280s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://10.1.145.190:5000/status/352c1fca-a585-4d70-a21b-c4b2cbbb93b3 (Time remaining: 275s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://10.1.145.190:5000/status/352c1fca-a585-4d70-a21b-c4b2cbbb93b3 (Time remaining: 269s)
+DEBUG: Current Job Status: succeeded
+DEBUG: Job 352c1fca-a585-4d70-a21b-c4b2cbbb93b3 completed. Fetching raw logs...
+Timestamp (job 352c1fca-a585-4d70-a21b-c4b2cbbb93b3, node krg-qcluster007: pod created): 1780455446000000000
+Timestamp (job 352c1fca-a585-4d70-a21b-c4b2cbbb93b3, node krg-qcluster007: output returned, success): 1780455447000000000
+DEBUG: Raw JOB_RESULTS_OUTPUT:
+{
+    "score": 100,
+    "output": "Compiling...\ncd helper_lib; make\nmake[1]: Entering directory '/autograder/submission/helper_lib'\ngcc -g -Wall -c -o device.o device.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o kernel.o kernel.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o matrix.o matrix.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o img.o img.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\nar rcs helper_lib.a device.o kernel.o matrix.o img.o\nmake[1]: Leaving directory '/autograder/submission/helper_lib'\ngcc -g -Wall -o solution helper_lib/helper_lib.a main.c -I helper_lib -I/usr/local/cuda/include helper_lib/helper_lib.a -lm -L/usr/local/cuda/lib64 -lOpenCL\nRunning solution with time: 1000000\n==============Starting Work==============\nRunning on:\n\tPlatform: QUALCOMM Snapdragon(TM)\n\tDevice: QUALCOMM Adreno(TM) 643\n\nCalls: 10\nElapsed: 1012723.578 us\nTotal FLOPs: 1.718e+11\nPerformance: 169.64 GFLOPS (FP32)\n===============End of Work===============\n"
+}
+DEBUG: Job succeeded. Formatting final JSON.
+{
+  "score": 100,
+  "output": "Compiling...\ncd helper_lib; make\nmake[1]: Entering directory '/autograder/submission/helper_lib'\ngcc -g -Wall -c -o device.o device.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o kernel.o kernel.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o matrix.o matrix.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o img.o img.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\nar rcs helper_lib.a device.o kernel.o matrix.o img.o\nmake[1]: Leaving directory '/autograder/submission/helper_lib'\ngcc -g -Wall -o solution helper_lib/helper_lib.a main.c -I helper_lib -I/usr/local/cuda/include helper_lib/helper_lib.a -lm -L/usr/local/cuda/lib64 -lOpenCL\nRunning solution with time: 1000000\n==============Starting Work==============\nRunning on:\n\tPlatform: QUALCOMM Snapdragon(TM)\n\tDevice: QUALCOMM Adreno(TM) 643\n\nCalls: 10\nElapsed: 1012723.578 us\nTotal FLOPs: 1.718e+11\nPerformance: 169.64 GFLOPS (FP32)\n===============End of Work===============\n\n\n--- EXECUTION LOGS ---\nStarting autograder from /autograder/source...\nExecuting benchmark inside /autograder/submission..."
+}

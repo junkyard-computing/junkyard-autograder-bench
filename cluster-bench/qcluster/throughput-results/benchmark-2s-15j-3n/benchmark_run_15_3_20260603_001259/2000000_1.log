@@ -1,0 +1,44 @@
+Timestamp (gradescope start): 1780470779127649018
+========================================
+Preparing job for Time: 2000000 µs
+Transferring payload to cluster...
+Timestamp (gradescope -> qcluster, start): 1780470779198786525
+DEBUG: Starting internal submission script.
+DEBUG: Go server found at internal IP: http://10.1.145.185:5000
+DEBUG: Submitting job to Go server at http://10.1.145.185:5000/submit.
+Timestamp (gradescope -> qcluster, end): 1780470781807688232
+DEBUG: Submit HTTP Status: 202
+DEBUG: Parsed JOB_ID: '0163828c-4698-47fa-8273-97b67d15f13f'. Polling for results...
+DEBUG: Polling URL: http://10.1.145.185:5000/status/0163828c-4698-47fa-8273-97b67d15f13f (Time remaining: 300s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://10.1.145.185:5000/status/0163828c-4698-47fa-8273-97b67d15f13f (Time remaining: 295s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://10.1.145.185:5000/status/0163828c-4698-47fa-8273-97b67d15f13f (Time remaining: 290s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://10.1.145.185:5000/status/0163828c-4698-47fa-8273-97b67d15f13f (Time remaining: 285s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://10.1.145.185:5000/status/0163828c-4698-47fa-8273-97b67d15f13f (Time remaining: 280s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://10.1.145.185:5000/status/0163828c-4698-47fa-8273-97b67d15f13f (Time remaining: 275s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://10.1.145.185:5000/status/0163828c-4698-47fa-8273-97b67d15f13f (Time remaining: 269s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://10.1.145.185:5000/status/0163828c-4698-47fa-8273-97b67d15f13f (Time remaining: 264s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://10.1.145.185:5000/status/0163828c-4698-47fa-8273-97b67d15f13f (Time remaining: 259s)
+DEBUG: Current Job Status: pending
+DEBUG: Polling URL: http://10.1.145.185:5000/status/0163828c-4698-47fa-8273-97b67d15f13f (Time remaining: 254s)
+DEBUG: Current Job Status: succeeded
+DEBUG: Job 0163828c-4698-47fa-8273-97b67d15f13f completed. Fetching raw logs...
+Timestamp (job 0163828c-4698-47fa-8273-97b67d15f13f, node krg-qcluster004: pod created): 1780470816000000000
+Timestamp (job 0163828c-4698-47fa-8273-97b67d15f13f, node krg-qcluster004: output returned, success): 1780470819000000000
+DEBUG: Raw JOB_RESULTS_OUTPUT:
+{
+    "score": 100,
+    "output": "Compiling...\ncd helper_lib; make\nmake[1]: Entering directory '/autograder/submission/helper_lib'\ngcc -g -Wall -c -o device.o device.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o kernel.o kernel.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o matrix.o matrix.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o img.o img.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\nar rcs helper_lib.a device.o kernel.o matrix.o img.o\nmake[1]: Leaving directory '/autograder/submission/helper_lib'\ngcc -g -Wall -o solution helper_lib/helper_lib.a main.c -I helper_lib -I/usr/local/cuda/include helper_lib/helper_lib.a -lm -L/usr/local/cuda/lib64 -lOpenCL\nRunning solution with time: 2000000\n==============Starting Work==============\nRunning on:\n\tPlatform: QUALCOMM Snapdragon(TM)\n\tDevice: QUALCOMM Adreno(TM) 643\n\nCalls: 20\nElapsed: 2020547.240 us\nTotal FLOPs: 3.436e+11\nPerformance: 170.05 GFLOPS (FP32)\n===============End of Work===============\n"
+}
+DEBUG: Job succeeded. Formatting final JSON.
+{
+  "score": 100,
+  "output": "Compiling...\ncd helper_lib; make\nmake[1]: Entering directory '/autograder/submission/helper_lib'\ngcc -g -Wall -c -o device.o device.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o kernel.o kernel.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o matrix.o matrix.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\ngcc -g -Wall -c -o img.o img.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lOpenCL -lm\nar rcs helper_lib.a device.o kernel.o matrix.o img.o\nmake[1]: Leaving directory '/autograder/submission/helper_lib'\ngcc -g -Wall -o solution helper_lib/helper_lib.a main.c -I helper_lib -I/usr/local/cuda/include helper_lib/helper_lib.a -lm -L/usr/local/cuda/lib64 -lOpenCL\nRunning solution with time: 2000000\n==============Starting Work==============\nRunning on:\n\tPlatform: QUALCOMM Snapdragon(TM)\n\tDevice: QUALCOMM Adreno(TM) 643\n\nCalls: 20\nElapsed: 2020547.240 us\nTotal FLOPs: 3.436e+11\nPerformance: 170.05 GFLOPS (FP32)\n===============End of Work===============\n\n\n--- EXECUTION LOGS ---\nStarting autograder from /autograder/source...\nExecuting benchmark inside /autograder/submission..."
+}

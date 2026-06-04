@@ -1,0 +1,5 @@
+Timestamp (gradescope start): 1780439898617381898
+Timestamp (gradescope -> qcluster, start): 1780439898797360855
+Timestamp (gradescope -> qcluster, end): 1780439904421377488
+Timestamp (job 3d3596df-a2c8-462a-9f6c-76d07bb21d56, node krg-qcluster002: pod created): 1780439948000000000
+Timestamp (job 3d3596df-a2c8-462a-9f6c-76d07bb21d56, node krg-qcluster002: output returned, success): 1780439953000000000
