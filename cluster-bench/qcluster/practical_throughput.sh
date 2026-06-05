@@ -61,17 +61,33 @@ for dir in "$@"; do
     }
 
     END {
+        NATIVE_AVG_PER_JOB_GFLOPS=169.234
+        NATIVE_THROUGHPUT_GFLOPS=158.351
         count = 0
+
         for (i in GFLOPS) {
-            printf "Node: %s, FLOPs: %s, min_time: %s, max_time: %s, jobs: %s\n", \
-                i, FLOPs[i], min_t[i], max_t[i], jobs[i]
-            PRACTICAL_THROUGHPUT += GFLOPS[i] / jobs[i]
-            EFFICIENCY += (FLOPs[i] / ((max_t[i] - min_t[i]) / 1e6)) \
-                / (GFLOPS[i] * 1e6 / jobs[i])
+            printf "Node: %s, FLOPs: %s, GFLOPS: %s, min_time: %s, max_time: %s, jobs: %s\n", \
+                i, FLOPs[i], GFLOPS[i], min_t[i], max_t[i], jobs[i]
+            runtime = max_t[i] - min_t[i]
+
+            TOTAL_FLOPs += FLOPs[i]
+            TOTAL_RUNTIME += runtime
+            THROUGHPUT_WOUT_LATENCY += GFLOPS[i] / jobs[i]
+            THROUGHPUT_WITH_LATENCY += (FLOPs[i] / 1e6) / (runtime / 1e6)
+
             count++ 
         }
-        printf "Practical Throughput: %s\n", PRACTICAL_THROUGHPUT
-        printf "Average Efficiency: %s\n", EFFICIENCY / count
+        PERFORMANCE_LOSS_VS_NATIVE = ((TOTAL_FLOPs / 1e6) / (TOTAL_RUNTIME / 1e6)) / count \
+            - NATIVE_THROUGHPUT_GFLOPS
+
+        EFFICIENCY_WOUT_LATENCY = (THROUGHPUT_WOUT_LATENCY / count) / NATIVE_AVG_PER_JOB_GFLOPS
+        EFFICIENCY_WITH_LATENCY = (THROUGHPUT_WITH_LATENCY / count) / NATIVE_THROUGHPUT_GFLOPS
+
+        printf "Throughput excluding latency overhead: %s\n", THROUGHPUT_WOUT_LATENCY
+        printf "Throughput including latency overhead: %s\n", THROUGHPUT_WITH_LATENCY
+        printf "Efficiency excluding latency overhead: %s\n", EFFICIENCY_WOUT_LATENCY
+        printf "Efficiency including latency overhead: %s\n", EFFICIENCY_WITH_LATENCY
+        printf "Performance loss vs. native: %s\n", PERFORMANCE_LOSS_VS_NATIVE
     }
     '
 
