@@ -1,0 +1,14 @@
+{
+    "strawhat": {
+        "gradescope_overhead": 350.7783672,
+        "cluster_duration_overhead": 2286.2676,
+        "scheduler_wait_overhead": 14973.46385,
+        "pod_creation_overhead": 2603.26
+    },
+    "qcluster": {
+        "gradescope_overhead": 183.47361685,
+        "cluster_duration_overhead": 10779.870,
+        "scheduler_wait_overhead": 24382.86116,
+        "pod_creation_overhead": 3671.389830
+    }
+}

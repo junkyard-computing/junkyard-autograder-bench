@@ -7,16 +7,38 @@ a classroom's job submissions without excessive timeouts.
 Sweeps from 1 → MAX_PODS and reports the minimum number of pods
 that keeps the job drop rate at or below DROP_RATE_TARGET.
 
+Usage:
+    python pod_simulator.py <csv_path> [cluster_name]
+
+    csv_path     — path to the job submissions CSV
+    cluster_name — optional key in CLUSTER_CONFIG_JSON to use for overhead values.
+                   If omitted, the hardcoded GRADESCOPE_OVERHEAD_MS /
+                   POD_CREATION_OVERHEAD constants below are used instead.
+
+Cluster config JSON format (path set via CLUSTER_CONFIG_JSON below):
+    {
+        "cluster1": {
+            "gradescope_overhead_ms": 10472.196608,
+            "pod_creation_overhead":  117.4208
+        },
+        "prod": {
+            "gradescope_overhead_ms": 9800.0,
+            "pod_creation_overhead":  95.0
+        }
+    }
+
 Replace the PARAMETERS section with real values once you have them.
 Drop in your real CSV by setting CSV_PATH below.
 """
 
 import csv
 import copy
+import json
 import time
 import heapq
 import random
 import sys
+import os
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -24,25 +46,34 @@ from typing import Optional
 # PARAMETERS  ← edit these
 # ─────────────────────────────────────────────
 
-# CSV_PATH               = "pa7_hours_pa8_runtime_n90_synthetic.csv"  # Set to None to use synthetic mock data.
-CSV_PATH = "pa8_hours_pa8_runtime_n1101_synthetic.csv" 
-MAX_PODS               = 200      # Sweep will try 1 pod up to this many, then stop.
+CSV_PATH            = "pa8_hours_pa8_runtime_n1101_synthetic.csv"
+# Allow overriding the cluster config JSON via environment variable so callers
+# can run the simulator from different working directories without adding
+# another CLI argument. If the env var is not set, default to the JSON that
+# lives next to this module (i.e. simulation/cluster_metrics.json).
+CLUSTER_CONFIG_JSON = os.getenv("CLUSTER_CONFIG_JSON") or \
+    os.path.join(os.path.dirname(__file__), "cluster_metrics.json")
 
-DROP_RATE_TARGET       = 0.05   # Stop sweep at the first pod count where drop rate ≤ this.
-                                # e.g. 0.05 = allow at most 5% of jobs to time out.
+MAX_PODS         = 200    # Sweep will try 1 pod up to this many, then stop.
+DROP_RATE_TARGET = 0.05   # Stop sweep at the first pod count where drop rate ≤ this.
+                          # e.g. 0.05 = allow at most 5% of jobs to time out.
+TIMEOUT_MS       = 500    # Max time (ms) a job may wait in queue before being dropped.
 
-TIMEOUT_MS             = 500    # Max time (ms) a job may wait in queue before being dropped.
+# Default overhead values — used when no cluster name is passed via CLI.
+# Strawhat defaults:
+GRADESCOPE_OVERHEAD          =   350.7783672  # Gradescope submission delay
+CLUSTER_DURATION_OVERHEAD    =  2286.2676     # Cluster processing delay
+SCHEDULER_WAIT_OVERHEAD      = 14973.46385    # Scheduler queue wait delay
+POD_CREATION_OVERHEAD        =  2603.26       # Additional delay (ms) for pod spin-up per job.
 
-GRADESCOPE_OVERHEAD_MS = 10472.196608   # Delay (ms): student clicks submit → job visible to scheduler.
-POD_CREATION_OVERHEAD  = 117.4208       # Additional delay (ms) for pod spin-up per job.
-OVERHEAD_JITTER_MS     = 5              # ± random jitter on top of the combined overhead (ms).
-                                        # Set to 0 for a fixed, deterministic overhead.
+OVERHEAD_JITTER_MS = 5              # ± random jitter on top of the combined overhead (ms).
+                                    # Set to 0 for a fixed, deterministic overhead.
 
-SPEED_MULTIPLIER       = float("inf")   # Sim speed. float('inf') = run instantly.
-                                        # Lower values (e.g. 10) pace the sim to real time.
+SPEED_MULTIPLIER = float("inf")     # Sim speed. float('inf') = run instantly.
+                                    # Lower values (e.g. 10) pace the sim to real time.
 
-VERBOSE                = False   # True  = print every event (arrival / dispatch / finish).
-                                 # False = silent per-run; only the summary table is shown.
+VERBOSE = False   # True  = print every event (arrival / dispatch / finish).
+                  # False = silent per-run; only the summary table is shown.
 
 # ── Mock data settings (only used when CSV_PATH is None) ──────────────────────
 MOCK_NUM_JOBS     = 300         # Number of synthetic jobs to generate
@@ -50,6 +81,55 @@ MOCK_CLASS_WINDOW = 120 * 1000  # Spread submissions over this window (ms)
 MOCK_JOB_MIN      = 30          # Min job duration in ms
 MOCK_JOB_MAX      = 2000        # Max job duration in ms
 RANDOM_SEED       = 42          # For reproducibility; set to None for random each run
+
+
+# ─────────────────────────────────────────────
+# CLUSTER CONFIG LOADER
+# ─────────────────────────────────────────────
+
+def load_cluster_overhead(json_path: str, cluster_name: str) -> tuple[float, float, float, float]:
+    """
+    Load overhead values for a named cluster from a JSON config file.
+
+    Returns (gradescope_overhead, cluster_duration_overhead, scheduler_wait_overhead,
+             pod_creation_overhead).
+
+    Raises FileNotFoundError if the JSON path doesn't exist.
+    Raises KeyError if cluster_name is not found in the file.
+    Raises ValueError if required fields are missing or non-numeric.
+    """
+    with open(json_path) as f:
+        config = json.load(f)
+
+    if cluster_name not in config:
+        available = ", ".join(f"'{k}'" for k in config)
+        raise KeyError(
+            f"Cluster '{cluster_name}' not found in '{json_path}'. "
+            f"Available: {available}"
+        )
+
+    entry          = config[cluster_name]
+    required_fields = ("gradescope_overhead", "cluster_duration_overhead", "scheduler_wait_overhead",
+                       "pod_creation_overhead")
+    for field_name in required_fields:
+        if field_name not in entry:
+            raise ValueError(
+                f"Cluster '{cluster_name}' in '{json_path}' "
+                f"is missing required field '{field_name}'."
+            )
+        if not isinstance(entry[field_name], (int, float)):
+            raise ValueError(
+                f"Cluster '{cluster_name}.{field_name}' must be a number, "
+                f"got {type(entry[field_name]).__name__!r}."
+            )
+
+    return (
+        float(entry["gradescope_overhead"]),
+        float(entry["cluster_duration_overhead"]),
+        float(entry["scheduler_wait_overhead"]),
+        float(entry["pod_creation_overhead"]),
+    )
+
 
 # ─────────────────────────────────────────────
 # DATA STRUCTURES
@@ -59,23 +139,23 @@ RANDOM_SEED       = 42          # For reproducibility; set to None for random ea
 class Event:
     """A simulation event ordered by sim-time."""
     time: float
-    kind: str           = field(compare=False)   # 'arrival' | 'completion'
-    job_id: int         = field(compare=False)
-    job_duration: float = field(compare=False, default=0.0)
+    kind: str             = field(compare=False)   # 'arrival' | 'completion'
+    job_id: int           = field(compare=False)
+    job_duration: float   = field(compare=False, default=0.0)
     pod_id: Optional[int] = field(compare=False, default=None)
 
 
 @dataclass
 class Job:
     job_id: int
-    submission_time: float      # When the student clicked submit
-    arrival_time: float         # When the job enters the scheduler (submission + overhead)
+    submission_time: float        # When the student clicked submit
+    arrival_time: float           # When the job enters the scheduler (submission + overhead)
     duration: float
-    overhead: float = 0.0       # Actual overhead applied to this job (ms)
-    start_time: Optional[float] = None
+    overhead: float = 0.0         # Actual overhead applied to this job (ms)
+    start_time: Optional[float]  = None
     finish_time: Optional[float] = None
-    timed_out: bool = False
-    pod_id: Optional[int] = None
+    timed_out: bool              = False
+    pod_id: Optional[int]        = None
 
     @property
     def wait_time(self) -> Optional[float]:
@@ -108,7 +188,6 @@ def parse_time(s: str) -> float:
     """
     s = s.strip()
 
-    # Plain numeric seconds
     if ":" not in s:
         return float(s) * 1000
 
@@ -130,13 +209,13 @@ def parse_time(s: str) -> float:
 
 def apply_overhead(jobs: list[Job], overhead_ms: float, jitter_ms: float, seed) -> list[Job]:
     """
-    Apply submission + pod-creation overhead to each job.
+    Apply submission + pod-creation + spindown overhead to each job 
     submission_time is preserved; arrival_time = submission_time + overhead + jitter.
     """
     rng = random.Random(seed)
     for job in jobs:
-        jitter           = rng.uniform(-jitter_ms, jitter_ms) if jitter_ms > 0 else 0.0
-        actual_overhead  = max(0.0, overhead_ms + jitter)
+        jitter          = rng.uniform(-jitter_ms, jitter_ms) if jitter_ms > 0 else 0.0
+        actual_overhead = max(0.0, overhead_ms + jitter)
         job.overhead     = actual_overhead
         job.arrival_time = job.submission_time + actual_overhead
     return jobs
@@ -344,7 +423,9 @@ def print_sweep_table(results: list[tuple[int, dict]], target: float):
 
 
 def print_final_report(num_pods: int, stats: dict, timeout: float,
-                       overhead_ms: float, jitter_ms: float, target: float):
+                       overhead_ms: float, gs_overhead: float, cluster_dur_overhead: float,
+                       sched_wait_overhead: float, pod_overhead: float,
+                       jitter_ms: float, target: float, overhead_source: str):
     """Detailed report for the recommended pod count."""
     print(f"\n{'='*64}")
     print(f"  RECOMMENDATION")
@@ -353,7 +434,12 @@ def print_final_report(num_pods: int, stats: dict, timeout: float,
     print(f"  Drop rate target            : ≤ {target*100:.1f}%")
     print(f"  Actual drop rate            : {stats['drop_rate']*100:.2f}%")
     print(f"  Timeout threshold           : {timeout}ms")
-    print(f"  Combined overhead           : {overhead_ms:.3f}ms ± {jitter_ms}ms jitter")
+    print(f"  Overhead source             : {overhead_source}")
+    print(
+        f"  Combined overhead           : {overhead_ms:.3f}ms "
+        f"({gs_overhead}ms gs + {cluster_dur_overhead}ms cluster + "
+        f"{sched_wait_overhead}ms sched + {pod_overhead}ms pod) ± {jitter_ms}ms jitter"
+    )
     print(f"  Avg actual overhead         : {stats['avg_overhead']:.2f}ms")
     print(f"  Total jobs                  : {stats['total']}")
     print(f"  Completed                   : {stats['completed']}  "
@@ -371,31 +457,51 @@ def print_final_report(num_pods: int, stats: dict, timeout: float,
 # ─────────────────────────────────────────────
 
 if __name__ == "__main__":
-    csv_path = None
-    if len(sys.argv) > 1 and sys.argv[1].strip():
-        csv_path = sys.argv[1].strip()
+    # ── Parse CLI arguments ───────────────────────────────────────────────────
+    # argv[1] = csv path      (optional, falls back to CSV_PATH)
+    # argv[2] = cluster name  (optional, falls back to hardcoded constants)
+    if len(sys.argv) < 2 or not sys.argv[1].strip():
+        print("Usage: python pod_simulator.py <csv_path> [cluster_name]")
+        sys.exit(1)
 
-    # ── Load data ────────────────────────────
-    if csv_path:
-        print(f"Loading jobs from: {csv_path}")
-        base_jobs = load_csv(csv_path)
+    csv_path     = sys.argv[1].strip()
+    cluster_name = sys.argv[2].strip() if len(sys.argv) > 2 else None
+
+    # ── Resolve overhead values ───────────────────────────────────────────────
+    if cluster_name:
+        print(f"Loading cluster config from : {CLUSTER_CONFIG_JSON}  (cluster: '{cluster_name}')")
+        gs_overhead, cluster_dur_overhead, sched_wait_overhead, pod_overhead = load_cluster_overhead(CLUSTER_CONFIG_JSON, cluster_name)
+        overhead_source = f"{CLUSTER_CONFIG_JSON} → '{cluster_name}'"
+        print(f"  gradescope_overhead       : {gs_overhead}")
+        print(f"  cluster_duration_overhead : {cluster_dur_overhead}")
+        print(f"  scheduler_wait_overhead   : {sched_wait_overhead}")
+        print(f"  pod_creation_overhead     : {pod_overhead}")
     else:
-        print("No CSV_PATH set — using synthetic mock data.")
-        exit(1)
+        print("No cluster name provided — using hardcoded default overhead values (strawhat).")
+        gs_overhead           = GRADESCOPE_OVERHEAD
+        cluster_dur_overhead  = CLUSTER_DURATION_OVERHEAD
+        sched_wait_overhead   = SCHEDULER_WAIT_OVERHEAD
+        pod_overhead          = POD_CREATION_OVERHEAD
+        overhead_source       = "hardcoded defaults (strawhat)"
 
+    # Combined overhead includes all delays: gradescope, cluster duration, scheduler wait,
+    # and pod creation.
+    total_overhead = gs_overhead + cluster_dur_overhead + sched_wait_overhead + pod_overhead
+    print(f"\nLoading jobs from: {csv_path}")
+    base_jobs = load_csv(csv_path)
     print(f"Loaded {len(base_jobs)} jobs.")
 
-    # ── Apply overhead once to the base job list ──────────────────────────────
-    # run_simulation deep-copies base_jobs on every call, so overhead only
-    # needs to be applied once here — it will be preserved across all runs.
-    total_overhead = GRADESCOPE_OVERHEAD_MS + POD_CREATION_OVERHEAD
     base_jobs = apply_overhead(base_jobs, total_overhead, OVERHEAD_JITTER_MS, seed=RANDOM_SEED)
-    print(f"Overhead applied: {total_overhead:.3f}ms "
-          f"({GRADESCOPE_OVERHEAD_MS}ms Gradescope + {POD_CREATION_OVERHEAD}ms pod creation) "
-          f"± {OVERHEAD_JITTER_MS}ms jitter\n")
+    print(
+        f"Overhead applied: {total_overhead:.3f}ms "
+        f"({gs_overhead}ms gradescope + {cluster_dur_overhead}ms cluster duration + "
+        f"{sched_wait_overhead}ms scheduler wait + {pod_overhead}ms pod creation) "
+        f"± {OVERHEAD_JITTER_MS}ms jitter\n"
+    )
 
-    # ── Binary search for minimum pods meeting target drop rate ──────────────
-    print(f"Binary searching 1 to {MAX_PODS} pod(s), target drop rate ≤ {DROP_RATE_TARGET*100:.1f}%\n")
+    # ── Binary search ─────────────────────────────────────────────────────────
+    print(f"Binary searching 1 to {MAX_PODS} pod(s), "
+          f"target drop rate ≤ {DROP_RATE_TARGET*100:.1f}%\n")
     sweep_results  = []
     recommendation = None
 
@@ -410,13 +516,13 @@ if __name__ == "__main__":
         stats = compute_stats(result_jobs)
         sweep_results.append((mid, stats))
         print(f"  drop={stats['drop_rate']*100:.1f}%  "
-            f"completed={stats['completed']}/{stats['total']}  "
-            f"avg_wait={stats['avg_wait']:.1f}ms")
+              f"completed={stats['completed']}/{stats['total']}  "
+              f"avg_wait={stats['avg_wait']:.1f}ms")
 
         if stats["drop_rate"] <= DROP_RATE_TARGET:
-            hi = mid        # met target, try fewer
+            hi = mid
         else:
-            lo = mid + 1    # didn't meet target, need more
+            lo = mid + 1
 
     # Verify the final answer
     print(f"  [final] Simulating {lo} pod(s)...", end="", flush=True)
@@ -427,28 +533,32 @@ if __name__ == "__main__":
     stats = compute_stats(result_jobs)
     sweep_results.append((lo, stats))
     print(f"  drop={stats['drop_rate']*100:.1f}%  "
-        f"completed={stats['completed']}/{stats['total']}  "
-        f"avg_wait={stats['avg_wait']:.1f}ms")
+          f"completed={stats['completed']}/{stats['total']}  "
+          f"avg_wait={stats['avg_wait']:.1f}ms")
 
     if stats["drop_rate"] <= DROP_RATE_TARGET:
         recommendation = (lo, stats)
         print(f"\n  ★  Minimum pods to meet target: {lo}\n")
     else:
         print(f"\n  ✗  Could not meet target within {MAX_PODS} pods.\n")
-    
 
     # ── Summary table ─────────────────────────────────────────────────────────
     print_sweep_table(sweep_results, DROP_RATE_TARGET)
-    
+
     # ── Final recommendation ──────────────────────────────────────────────────
     if recommendation:
         print_final_report(
-            num_pods    = recommendation[0],
-            stats       = recommendation[1],
-            timeout     = TIMEOUT_MS,
-            overhead_ms = total_overhead,
-            jitter_ms   = OVERHEAD_JITTER_MS,
-            target      = DROP_RATE_TARGET,
+            num_pods              = recommendation[0],
+            stats                 = recommendation[1],
+            timeout               = TIMEOUT_MS,
+            overhead_ms           = total_overhead,
+            gs_overhead           = gs_overhead,
+            cluster_dur_overhead  = cluster_dur_overhead,
+            sched_wait_overhead   = sched_wait_overhead,
+            pod_overhead          = pod_overhead,
+            jitter_ms             = OVERHEAD_JITTER_MS,
+            target                = DROP_RATE_TARGET,
+            overhead_source       = overhead_source,
         )
     else:
         print(f"\n  ⚠  Target of ≤{DROP_RATE_TARGET*100:.1f}% drop rate NOT met within "

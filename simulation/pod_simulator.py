@@ -25,11 +25,37 @@ Sessions CSV columns (required):
   timestamp        : ISO-8601 datetime  — when the session starts
   length_seconds   : session duration in seconds
   student_id       : optional
+
+─── Cluster config JSON ──────────────────────────────────────────────
+Optional JSON file at CLUSTER_CONFIG_JSON with named cluster entries.
+Each entry must contain:
+  gradescope_overhead_ms  : float
+  pod_creation_overhead   : float
+
+Example:
+  {
+      "cluster1": {
+          "gradescope_overhead_ms": 24373.76,
+          "pod_creation_overhead":  2603.26
+      },
+      "prod": {
+          "gradescope_overhead_ms": 18000.0,
+          "pod_creation_overhead":  1500.0
+      }
+  }
+
+Usage:
+  python pod_simulator_interactive.py <submissions_csv> <sessions_csv> [cluster_name]
+
+  cluster_name — key in CLUSTER_CONFIG_JSON to use for overhead values.
+                 If omitted, the hardcoded GRADESCOPE_OVERHEAD_MS /
+                 POD_CREATION_OVERHEAD constants below are used instead.
 """
 
 import csv
 import copy
 import heapq
+import json
 import random
 import re
 import sys
@@ -43,30 +69,84 @@ from typing import Optional
 # PARAMETERS  ← edit these
 # ─────────────────────────────────────────────
 
-SUBMISSIONS_CSV = "pa8_hours_pa8_runtime_n1101_synthetic.csv"
-SESSIONS_CSV    = "../submission-model/interactive-dev-sessions/sessions.csv"
-SESSION_START = "2026-03-09T15:26:49.338103-07:00"
+SUBMISSIONS_CSV      = "pa8_hours_pa8_runtime_n1101_synthetic.csv"
+SESSIONS_CSV         = "../submission-model/interactive-dev-sessions/sessions.csv"
+CLUSTER_CONFIG_JSON  = "cluster_metrics.json"   # Path to overhead config; see module docstring.
+
+SESSION_START    = "2026-03-09T15:26:49.338103-07:00"
 SUBMISSION_START = "2026-03-09T18:21:14.338103-07:00"
 
 MAX_PODS = 200   # Sweep upper bound
 
 # ── Batch jobs ────────────────────────────────────────────────────────────────
-BATCH_DROP_TARGET = 0.05   # ≤ 5% of batch jobs may time out
-BATCH_TIMEOUT_MS  = 300000    # Job dropped if it waits longer than this in queue (ms)
+BATCH_DROP_TARGET = 0.05     # ≤ 5% of batch jobs may time out
+BATCH_TIMEOUT_MS  = 300000   # Job dropped if it waits longer than this in queue (ms)
 
 # ── Interactive sessions ──────────────────────────────────────────────────────
 MAX_SESSION_HOURS       = 6        # Session evicted after this; remainder re-queued
-SESSION_WAIT_TARGET_MS  = 100000  # p95 session queue wait must be ≤ this (ms)
+SESSION_WAIT_TARGET_MS  = 100000   # p95 session queue wait must be ≤ this (ms)
 SESSION_WAIT_PERCENTILE = 99       # percentile used for the wait target
 
-# ── Overhead (ms) ─────────────────────────────────────────────────────────────
-GRADESCOPE_OVERHEAD_MS = 24_373.76  # Gradescope + Junkyard + Waiting-for-scheduler
-POD_CREATION_OVERHEAD  =  2_603.26  # Pod spin-up delay after assignment
-OVERHEAD_JITTER_MS     =      5     # ± random jitter on combined overhead
+# ── Default overhead (ms) — used when no cluster name is passed via CLI ───────
+# Strawhat defaults:
+GRADESCOPE_OVERHEAD          =   350.7783672  # Gradescope submission delay
+CLUSTER_DURATION_OVERHEAD    =  2286.2676     # Cluster processing delay
+SCHEDULER_WAIT_OVERHEAD      = 14973.46385    # Scheduler queue wait delay
+POD_CREATION_OVERHEAD        =  2603.26       # Pod spin-up delay after assignment
+OVERHEAD_JITTER_MS           =     5          # ± random jitter on combined overhead
 
 SPEED_MULTIPLIER = float("inf")  # float('inf') = instant; e.g. 10 = 10× real-time
 VERBOSE          = False
 RANDOM_SEED      = 42
+
+
+# ─────────────────────────────────────────────
+# CLUSTER CONFIG LOADER
+# ─────────────────────────────────────────────
+
+def load_cluster_overhead(json_path: str, cluster_name: str) -> tuple[float, float, float, float]:
+    """
+    Load overhead values for a named cluster from a JSON config file.
+
+    Returns (gradescope_overhead, cluster_duration_overhead, scheduler_wait_overhead,
+             pod_creation_overhead).
+
+    Raises FileNotFoundError if the JSON path doesn't exist.
+    Raises KeyError if cluster_name is not found in the file.
+    Raises ValueError if required fields are missing or non-numeric.
+    """
+    with open(json_path) as f:
+        config = json.load(f)
+
+    if cluster_name not in config:
+        available = ", ".join(f"'{k}'" for k in config)
+        raise KeyError(
+            f"Cluster '{cluster_name}' not found in '{json_path}'. "
+            f"Available: {available}"
+        )
+
+    entry = config[cluster_name]
+    required = ("gradescope_overhead", "cluster_duration_overhead", "scheduler_wait_overhead",
+                "pod_creation_overhead")
+    for field_name in required:
+        if field_name not in entry:
+            raise ValueError(
+                f"Cluster '{cluster_name}' in '{json_path}' "
+                f"is missing required field '{field_name}'."
+            )
+        if not isinstance(entry[field_name], (int, float)):
+            raise ValueError(
+                f"Cluster '{cluster_name}.{field_name}' must be a number, "
+                f"got {type(entry[field_name]).__name__!r}."
+            )
+
+    return (
+        float(entry["gradescope_overhead"]),
+        float(entry["cluster_duration_overhead"]),
+        float(entry["scheduler_wait_overhead"]),
+        float(entry["pod_creation_overhead"]),
+    )
+
 
 # ─────────────────────────────────────────────
 # DATA STRUCTURES
@@ -172,11 +252,6 @@ def _parse_hours(s: str) -> float:
 
 
 def load_submissions(path: str) -> list[BatchJob]:
-    """
-    Load batch jobs.  submission_time is stored as relative ms
-    (hours_since_first → ms).  _align_timelines() converts it to
-    absolute ms on the shared session timeline before the sim runs.
-    """
     jobs    = []
     skipped = 0
     with open(path, newline="") as f:
@@ -197,7 +272,6 @@ def load_submissions(path: str) -> list[BatchJob]:
                 skipped += 1
                 continue
 
-            # Accept either column name
             time_col = fields.get("hours_since_first") or fields.get("submission_time")
             if not time_col:
                 raise ValueError("Submissions CSV needs 'hours_since_first' or 'submission_time'.")
@@ -220,7 +294,6 @@ def load_submissions(path: str) -> list[BatchJob]:
 
 
 def load_sessions(path: str) -> list[Session]:
-    """Load sessions. arrival_time is absolute epoch ms from ISO-8601 timestamp."""
     sessions = []
     with open(path, newline="") as f:
         reader = csv.DictReader(f)
@@ -244,29 +317,17 @@ def load_sessions(path: str) -> list[Session]:
 
 
 def _align_timelines(jobs: list[BatchJob], sessions: list[Session]):
-    """
-    Sessions: absolute ISO-8601 timestamps → zero to first session.
-    Jobs:     hours_since_first (float) → already relative, just need
-              to shift by the real gap between first session and first submission.
-    """
-    # ── 1. Zero sessions to first session (the earlier anchor) ──
     session_t0 = min(s.arrival_time for s in sessions)
     for s in sessions:
         s.arrival_time -= session_t0
 
-    # ── 2. Compute offset: where does t=0 (first submission) fall
-    #       on the session timeline? ──────────────────────────────
     FIRST_SUBMISSION_EPOCH_MS = _parse_iso(SUBMISSION_START)
     FIRST_SESSION_EPOCH_MS    = _parse_iso(SESSION_START)
     JOB_START_OFFSET_MS       = FIRST_SUBMISSION_EPOCH_MS - FIRST_SESSION_EPOCH_MS
-    # → ~10_465_000 ms (jobs start ~2.9h into the session timeline)
 
-    # ── 3. Place jobs on session timeline ───────────────────────
-    # submission_time is already hours_since_first in ms (via _parse_hours),
-    # so just add the offset to shift onto the session axis
     for j in jobs:
         j.submission_time = j.submission_time + JOB_START_OFFSET_MS
-        j.arrival_time    = j.submission_time  # overhead applied later
+        j.arrival_time    = j.submission_time
 
 
 def apply_batch_overhead(jobs: list[BatchJob], overhead_ms: float,
@@ -367,7 +428,6 @@ def run_simulation(
             time.sleep(delta)
 
     def try_dispatch(current_time: float):
-        # Expire timed-out batch jobs (sessions never time out)
         i = 0
         while i < len(batch_queue):
             j = batch_queue[i]
@@ -381,7 +441,6 @@ def run_simulation(
             else:
                 i += 1
 
-        # Assign idle pods: sessions first, then batch
         for queue, label in ((session_queue, "session"), (batch_queue, "batch")):
             while queue:
                 idle_pod = next((i for i, idle in enumerate(pod_idle) if idle), None)
@@ -584,7 +643,10 @@ def print_sweep_table(results: list[tuple[int, dict, dict]]):
     print(f"{'='*100}")
 
 
-def print_final_report(num_pods: int, b: dict, s: dict, overhead_ms: float):
+def print_final_report(num_pods: int, b: dict, s: dict,
+                       overhead_ms: float, gs_overhead: float, cluster_dur_overhead: float,
+                       sched_wait_overhead: float, pod_overhead: float,
+                       overhead_source: str):
     p = SESSION_WAIT_PERCENTILE
     print(f"\n{'='*70}")
     print(f"  RECOMMENDATION")
@@ -595,9 +657,13 @@ def print_final_report(num_pods: int, b: dict, s: dict, overhead_ms: float):
     print(f"  Drop rate target    : ≤ {BATCH_DROP_TARGET*100:.1f}%")
     print(f"  Actual drop rate    : {b['drop_rate']*100:.2f}%")
     print(f"  Timeout threshold   : {BATCH_TIMEOUT_MS}ms")
-    print(f"  Combined overhead   : {overhead_ms:.2f}ms "
-          f"({GRADESCOPE_OVERHEAD_MS}ms + {POD_CREATION_OVERHEAD}ms) "
-          f"± {OVERHEAD_JITTER_MS}ms jitter")
+    print(f"  Overhead source     : {overhead_source}")
+    print(
+        f"  Combined overhead   : {overhead_ms:.2f}ms "
+        f"({gs_overhead}ms gs + {cluster_dur_overhead}ms cluster + "
+        f"{sched_wait_overhead}ms sched + {pod_overhead}ms pod) "
+        f"± {OVERHEAD_JITTER_MS}ms jitter"
+    )
     print(f"  Avg actual overhead : {b['avg_overhead']:.2f}ms")
     print(f"  Total / done / drop : {b['total']} / {b['completed']} / {b['timed_out']}")
     print(f"  Avg queue wait      : {b['avg_wait']:.2f}ms")
@@ -615,11 +681,11 @@ def print_final_report(num_pods: int, b: dict, s: dict, overhead_ms: float):
     print(f"  Avg initial wait    : {s['avg_wait']:.2f}ms")
     print(f"  Max initial wait    : {s['max_wait']:.2f}ms")
     print(f"  Wait percentiles    : "
-      f"p50={s['p50_wait']/1000:.1f}s  "
-      f"p75={s['p75_wait']/1000:.1f}s  "
-      f"p90={s['p90_wait']/1000:.1f}s  "
-      f"p95={s['p95_wait']/1000:.1f}s  "
-      f"p99={s['p99_wait']/1000:.1f}s")
+          f"p50={s['p50_wait']/1000:.1f}s  "
+          f"p75={s['p75_wait']/1000:.1f}s  "
+          f"p90={s['p90_wait']/1000:.1f}s  "
+          f"p95={s['p95_wait']/1000:.1f}s  "
+          f"p99={s['p99_wait']/1000:.1f}s")
     print(f"{'='*70}\n")
 
 
@@ -628,10 +694,35 @@ def print_final_report(num_pods: int, b: dict, s: dict, overhead_ms: float):
 # ─────────────────────────────────────────────
 
 if __name__ == "__main__":
-    sub_path = sys.argv[1] if len(sys.argv) > 1 else SUBMISSIONS_CSV
-    ses_path = sys.argv[2] if len(sys.argv) > 2 else SESSIONS_CSV
+    # ── Parse CLI arguments ───────────────────────────────────────────────────
+    # argv[1] = submissions CSV  (optional, falls back to SUBMISSIONS_CSV)
+    # argv[2] = sessions CSV     (optional, falls back to SESSIONS_CSV)
+    # argv[3] = cluster name     (optional, falls back to hardcoded constants)
+    sub_path     = sys.argv[1] if len(sys.argv) > 1 else SUBMISSIONS_CSV
+    ses_path     = sys.argv[2] if len(sys.argv) > 2 else SESSIONS_CSV
+    cluster_name = sys.argv[3].strip() if len(sys.argv) > 3 else None
 
-    print(f"Loading submissions from : {sub_path}")
+    # ── Resolve overhead values ───────────────────────────────────────────────
+    if cluster_name:
+        print(f"Loading cluster config from : {CLUSTER_CONFIG_JSON}  (cluster: '{cluster_name}')")
+        gs_overhead, cluster_dur_overhead, sched_wait_overhead, pod_overhead = load_cluster_overhead(CLUSTER_CONFIG_JSON, cluster_name)
+        overhead_source = f"{CLUSTER_CONFIG_JSON} → '{cluster_name}'"
+        print(f"  gradescope_overhead       : {gs_overhead}")
+        print(f"  cluster_duration_overhead : {cluster_dur_overhead}")
+        print(f"  scheduler_wait_overhead   : {sched_wait_overhead}")
+        print(f"  pod_creation_overhead     : {pod_overhead}")
+    else:
+        print("No cluster name provided — using hardcoded default overhead values (strawhat).")
+        gs_overhead           = GRADESCOPE_OVERHEAD
+        cluster_dur_overhead  = CLUSTER_DURATION_OVERHEAD
+        sched_wait_overhead   = SCHEDULER_WAIT_OVERHEAD
+        pod_overhead          = POD_CREATION_OVERHEAD
+        overhead_source       = "hardcoded defaults (strawhat)"
+
+    total_overhead = gs_overhead + cluster_dur_overhead + sched_wait_overhead + pod_overhead
+
+    # ── Load data ─────────────────────────────────────────────────────────────
+    print(f"\nLoading submissions from : {sub_path}")
     base_jobs = load_submissions(sub_path)
     print(f"  → {len(base_jobs)} valid batch jobs loaded.")
 
@@ -642,13 +733,15 @@ if __name__ == "__main__":
     # Align both timelines to a shared origin before applying overhead
     _align_timelines(base_jobs, base_sessions)
 
-    total_overhead = GRADESCOPE_OVERHEAD_MS + POD_CREATION_OVERHEAD
     base_jobs = apply_batch_overhead(
         base_jobs, total_overhead, OVERHEAD_JITTER_MS, seed=RANDOM_SEED
     )
-    print(f"\nOverhead applied : {total_overhead:.2f}ms "
-          f"({GRADESCOPE_OVERHEAD_MS}ms Gradescope + {POD_CREATION_OVERHEAD}ms pod spin-up) "
-          f"± {OVERHEAD_JITTER_MS}ms jitter")
+    print(
+        f"\nOverhead applied : {total_overhead:.2f}ms "
+        f"({gs_overhead}ms gradescope + {cluster_dur_overhead}ms cluster duration + "
+        f"{sched_wait_overhead}ms scheduler wait + {pod_overhead}ms pod creation) "
+        f"± {OVERHEAD_JITTER_MS}ms jitter"
+    )
     print(f"Session cap      : {MAX_SESSION_HOURS}h  |  "
           f"Session p{SESSION_WAIT_PERCENTILE} wait target : "
           f"≤ {SESSION_WAIT_TARGET_MS/1000:.0f}s\n")
@@ -707,10 +800,15 @@ if __name__ == "__main__":
 
     if recommendation:
         print_final_report(
-            num_pods    = recommendation[0],
-            b           = recommendation[1],
-            s           = recommendation[2],
-            overhead_ms = total_overhead,
+            num_pods              = recommendation[0],
+            b                     = recommendation[1],
+            s                     = recommendation[2],
+            overhead_ms           = total_overhead,
+            gs_overhead           = gs_overhead,
+            cluster_dur_overhead  = cluster_dur_overhead,
+            sched_wait_overhead   = sched_wait_overhead,
+            pod_overhead          = pod_overhead,
+            overhead_source       = overhead_source,
         )
     else:
         print(f"\n  ⚠  Targets NOT met within {MAX_PODS} pods.")

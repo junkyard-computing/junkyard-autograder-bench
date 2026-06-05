@@ -16,12 +16,13 @@ from datetime import datetime
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 GENERATOR_SCRIPT = os.path.join(SCRIPT_DIR, ".", "pa_sample_generator.py")
 SIM_SCRIPT = os.path.join(SCRIPT_DIR, "..", "pod_sim.py")
-OUTPUT_FILE = os.path.join(SCRIPT_DIR, "results.txt")
+OUTPUT_FILE = os.path.join(SCRIPT_DIR, "qcluster-med.txt")
 STUDENT_SUBMISSION_RATE = 3 # Run generator every iteration (no skipping)
 
 NUM_STUDENTS = 3000
-PA_SUBMISSION = "7"
+PA_SUBMISSION = "8"
 PA_RUNTIME = "8"
+CLUSTER = "qcluster"
 
 
 def run_generator(iteration: int) -> str:
@@ -53,11 +54,21 @@ def run_sim(csv_filename: str) -> int | None:
     """Run pod_sim.py on the given CSV and extract the minimum pods value."""
     print(f"  Running pod_sim.py on {csv_filename} ...")
 
+    # Ensure the simulator sees the correct cluster config JSON regardless
+    # of the current working directory. Prefer an absolute path to the
+    # simulation/cluster_metrics.json file and pass it via env var so
+    # pod_sim.py can pick it up without adding another CLI flag.
+    env = os.environ.copy()
+    env["CLUSTER_CONFIG_JSON"] = os.path.abspath(
+        os.path.join(SCRIPT_DIR, "..", "cluster_metrics.json")
+    )
+
     result = subprocess.run(
-        [sys.executable, SIM_SCRIPT, csv_filename],
+        [sys.executable, SIM_SCRIPT, csv_filename, CLUSTER],
         capture_output=True,
         text=True,
         cwd=SCRIPT_DIR,
+        env=env,
     )
 
     if result.returncode != 0:
@@ -99,7 +110,7 @@ def main():
     current_time = now.strftime("%H:%M:%S")
     print("Current Time =", current_time)
 
-    STUDENT_STEP = 10  # sample every 10th student
+    STUDENT_STEP = 50  # sample every 10th student
 
     for students in range(1, NUM_STUDENTS + 1, STUDENT_STEP):
         i = students * STUDENT_SUBMISSION_RATE

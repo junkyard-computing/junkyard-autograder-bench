@@ -1,4 +1,4 @@
-attempt_number,submission_time,runtime_ms,score,active
+attempt_number,hours_since_first,runtime_ms,score,active
 1,0.0,768.36,0.0,True
 2,20.8778,924.23,90.0,True
 3,25.8531,934.62,0.0,True
