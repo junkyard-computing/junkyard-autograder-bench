@@ -1,3 +1,4 @@
+Strawhat Cluster
 Num Students Min Nodes
 -------------------------
 1            2
