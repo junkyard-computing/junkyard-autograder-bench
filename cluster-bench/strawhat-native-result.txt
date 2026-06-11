@@ -1,0 +1,13 @@
+Job 25: 2000.1 ms  498.20 GFLOPs  249.10 GFLOPS
+Job 26: 2066.8 ms  515.40 GFLOPs  249.36 GFLOPS
+Job 27: 2004.5 ms  498.20 GFLOPs  248.55 GFLOPS
+Job 28: 2065.0 ms  515.40 GFLOPs  249.59 GFLOPS
+Job 29: 2064.2 ms  515.40 GFLOPs  249.68 GFLOPS
+Job 30: 2064.3 ms  515.40 GFLOPs  249.67 GFLOPS
+=== NATIVE BASELINE ===
+Jobs:              30
+Total time:        64.5298 s
+GFLOPs/job:        507.947
+Throughput:        236.145 GFLOPS (total GFLOPs/total wall time)
+GPU active rate:   249.137 GFLOPS (total GFLOPs/sum of elapsed)
+Avg per-job:       249.134 GFLOPS (avg of per-job GFLOPS)
