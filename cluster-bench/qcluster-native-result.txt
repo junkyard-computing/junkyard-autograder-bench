@@ -1,0 +1,21 @@
+...
+Job 38: 2016.8 ms  343.60 GFLOPs  170.36 GFLOPS
+Job 39: 2029.0 ms  343.60 GFLOPs  169.35 GFLOPS
+Job 40: 2031.2 ms  343.60 GFLOPs  169.16 GFLOPS
+Job 41: 2034.2 ms  343.60 GFLOPs  168.91 GFLOPS
+Job 42: 2037.4 ms  343.60 GFLOPs  168.65 GFLOPS
+Job 43: 2032.3 ms  343.60 GFLOPs  169.07 GFLOPS
+Job 44: 2028.0 ms  343.60 GFLOPs  169.43 GFLOPS
+Job 45: 2028.2 ms  343.60 GFLOPs  169.41 GFLOPS
+Job 46: 2012.8 ms  343.60 GFLOPs  170.71 GFLOPS
+Job 47: 2034.0 ms  343.60 GFLOPs  168.93 GFLOPS
+Job 48: 2015.0 ms  343.60 GFLOPs  170.52 GFLOPS
+Job 49: 2032.0 ms  343.60 GFLOPs  169.10 GFLOPS
+Job 50: 2032.1 ms  343.60 GFLOPs  169.09 GFLOPS
+=== NATIVE BASELINE ===
+Jobs:              50
+Total time:        108.493 s
+GFLOPs/job:        343.6
+Throughput:        158.351 GFLOPS (total GFLOPs/total wall time)
+GPU active rate:   169.233 GFLOPS (total GFLOPs/sum of elapsed)
+Avg per-job:       169.234 GFLOPS (avg of per-job GFLOPS)
